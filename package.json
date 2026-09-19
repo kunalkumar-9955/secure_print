@@ -19,6 +19,10 @@
     "prisma:seed": "npm --workspace=apps/api run prisma:seed",
     "start:api": "npm --workspace=apps/api run start:prod"
   },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "dependencies": {
     "@neon/config": "^1.7.2",
     "@neon/env": "^1.4.3",
