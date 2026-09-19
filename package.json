@@ -19,12 +19,10 @@
     "prisma:seed": "npm --workspace=apps/api run prisma:seed",
     "start:api": "npm --workspace=apps/api run start:prod"
   },
-  "devDependencies": {
-    "@types/node": "^26.6.1",
-    "typescript": "^5.7.3"
-  },
   "dependencies": {
     "@neon/config": "^1.7.2",
-    "@neon/env": "^1.4.3"
+    "@neon/env": "^1.4.3",
+    "@types/node": "^22.13.9",
+    "typescript": "^5.7.3"
   }
 }
