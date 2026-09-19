@@ -1,0 +1,12 @@
+<Application x:Class="SecurePrint.Agent.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             StartupUri="MainWindow.xaml">
+    <Application.Resources>
+         <SolidColorBrush x:Key="PrimaryGreen" Color="#16a34a" />
+         <SolidColorBrush x:Key="DarkBg" Color="#0f172a" />
+         <SolidColorBrush x:Key="CardBg" Color="#1e293b" />
+         <SolidColorBrush x:Key="TextLight" Color="#f8fafc" />
+         <SolidColorBrush x:Key="TextMuted" Color="#94a3b8" />
+    </Application.Resources>
+</Application>

@@ -1,0 +1,484 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SHOP_OWNER
+  SHOP_STAFF
+}
+
+enum ShopStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+enum SubscriptionStatus {
+  INACTIVE
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+enum SubscriptionInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum JobStatus {
+  REQUEST_SENT
+  SHOP_RECEIVED
+  PRINTING
+  PRINTING_COMPLETED
+  AWAITING_PAYMENT
+  PAYMENT_PENDING
+  PAYMENT_SUCCESS
+  CLEANUP_PENDING
+  FILES_DELETED
+  JOB_CLOSED
+  PRINT_FAILED
+  PAYMENT_FAILED
+  PAYMENT_CANCELLED
+  PAYMENT_UNKNOWN
+  CLEANUP_FAILED
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  CANCELLED
+  UNKNOWN
+  REFUNDED
+  REVERSED
+}
+
+enum PaymentMethod {
+  CASHFREE
+  CASH
+}
+
+enum AgentStatus {
+  ONLINE
+  OFFLINE
+  CONNECTING
+  RECONNECTING
+  REVOKED
+  ERROR
+  UNKNOWN
+}
+
+enum PrinterStatus {
+  DISCOVERED
+  CONNECTING
+  CONNECTED
+  READY
+  PRINTING
+  OFFLINE
+  ERROR
+  DISCONNECTED
+  UNKNOWN
+}
+
+enum PrintAttemptStatus {
+  QUEUED
+  SUBMITTED
+  ACKNOWLEDGED
+  PRINTING
+  COMPLETED
+  FAILED
+  SUBMISSION_UNKNOWN
+}
+
+model Shop {
+  id          String     @id @default(uuid())
+  name        String
+  slug        String     @unique
+  address     String?
+  phone       String?
+  status      ShopStatus @default(PENDING_PAYMENT)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  users                   User[]
+  shopMembers             ShopMember[]
+  subscriptions           Subscription[]
+  subscriptionPayments    SubscriptionPayment[]
+  customerSessions        CustomerSession[]
+  printJobs               PrintJob[]
+  printJobFiles           PrintJobFile[]
+  printers                Printer[]
+  desktopAgents           DesktopAgent[]
+  payments                Payment[]
+  cleanupJobs             CleanupJob[]
+  receipts                Receipt[]
+  shopSettings            ShopSettings?
+  auditLogs               AuditLog[]
+  paymentProviderAccounts PaymentProviderAccount[]
+
+  @@index([slug])
+  @@index([status])
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(SHOP_STAFF)
+  shopId       String?
+  shop         Shop?     @relation(fields: [shopId], references: [id], onDelete: SetNull)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  shopMembers  ShopMember[]
+  auditLogs    AuditLog[]
+
+  @@index([email])
+  @@index([shopId])
+}
+
+model ShopMember {
+  id              String   @id @default(uuid())
+  shopId          String
+  shop            Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role            UserRole @default(SHOP_STAFF)
+  permissionsJson Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([shopId, userId])
+  @@index([shopId])
+  @@index([userId])
+}
+
+model SubscriptionPlan {
+  id           String               @id @default(uuid())
+  name         String
+  tier         String
+  price        Decimal              @db.Decimal(10, 2)
+  interval     SubscriptionInterval @default(MONTHLY)
+  featuresJson Json
+  limitsJson   Json
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  shopId             String
+  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  planId             String
+  plan               SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status             SubscriptionStatus @default(INACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  payments SubscriptionPayment[]
+
+  @@index([shopId])
+  @@index([status])
+}
+
+model SubscriptionPayment {
+  id             String        @id @default(uuid())
+  shopId         String
+  shop           Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("INR")
+  provider       String        @default("CASHFREE")
+  providerRef    String?
+  status         PaymentStatus @default(PENDING)
+  createdAt      DateTime      @default(now())
+
+  @@index([shopId])
+  @@index([subscriptionId])
+}
+
+model CustomerSession {
+  id           String    @id @default(uuid())
+  shopId       String
+  shop         Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sessionToken String    @unique
+  customerName String
+  deviceInfo   String?
+  expiresAt    DateTime
+  lastSeenAt   DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+
+  printJobs PrintJob[]
+
+  @@index([shopId])
+  @@index([sessionToken])
+}
+
+model PrintJob {
+  id                  String         @id @default(uuid())
+  shopId              String
+  shop                Shop           @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  sessionId           String
+  session             CustomerSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  jobCode             String         @unique
+  status              JobStatus      @default(REQUEST_SENT)
+  printOptionsJson    Json
+  pricingSnapshotJson Json
+  paymentMethod       PaymentMethod?
+  paymentStatus       PaymentStatus  @default(PENDING)
+  printingCompleted   Boolean        @default(false)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  files         PrintJobFile[]
+  printAttempts PrintAttempt[]
+  payments      Payment[]
+  cleanupJobs   CleanupJob[]
+  receipts      Receipt[]
+
+  @@index([shopId])
+  @@index([sessionId])
+  @@index([status])
+  @@index([jobCode])
+}
+
+model PrintJobFile {
+  id           String    @id @default(uuid())
+  jobId        String
+  job          PrintJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  shopId       String
+  shop         Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  storageKey   String
+  originalName String
+  mimeType     String
+  sizeBytes    BigInt
+  pageCount    Int       @default(1)
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([jobId])
+  @@index([shopId])
+  @@index([isDeleted])
+}
+
+model DesktopAgent {
+  id                   String      @id @default(uuid())
+  shopId               String
+  shop                 Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  installationId       String      @unique
+  machineName          String
+  osVersion            String?
+  agentVersion         String
+  status               AgentStatus @default(OFFLINE)
+  pairingCode          String?
+  pairingCodeExpiresAt DateTime?
+  pairingToken         String?
+  pairedAt             DateTime?
+  lastHeartbeatAt      DateTime?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  printers      Printer[]
+  printAttempts PrintAttempt[]
+
+  @@index([shopId])
+  @@index([installationId])
+  @@index([status])
+}
+
+model Printer {
+  id                 String        @id @default(uuid())
+  shopId             String
+  shop               Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  agentId            String?
+  agent              DesktopAgent? @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  windowsPrinterName String
+  driverName         String?
+  status             PrinterStatus @default(DISCOVERED)
+  capabilitiesJson   Json
+  isDefault          Boolean       @default(false)
+  lastSeenAt         DateTime      @default(now())
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  printAttempts PrintAttempt[]
+
+  @@unique([shopId, windowsPrinterName])
+  @@index([shopId])
+  @@index([agentId])
+  @@index([status])
+}
+
+model PrintAttempt {
+  id           String             @id @default(uuid())
+  jobId        String
+  job          PrintJob           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  agentId      String?
+  agent        DesktopAgent?      @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  printerId    String?
+  printer      Printer?           @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  status       PrintAttemptStatus @default(QUEUED)
+  errorMessage String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@index([jobId])
+  @@index([agentId])
+  @@index([printerId])
+  @@index([status])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  shopId            String
+  shop              Shop          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  jobId             String
+  job               PrintJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("INR")
+  provider          PaymentMethod @default(CASHFREE)
+  providerOrderId   String?       @unique
+  providerPaymentId String?       @unique
+  status            PaymentStatus @default(CREATED)
+  verifiedAt        DateTime?
+  confirmedByUserId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  paymentEvents PaymentEvent[]
+
+  @@index([shopId])
+  @@index([jobId])
+  @@index([providerOrderId])
+  @@index([status])
+}
+
+model PaymentEvent {
+  id          String   @id @default(uuid())
+  paymentId   String
+  payment     Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  eventType   String
+  payloadJson Json
+  signature   String?
+  isProcessed Boolean  @default(false)
+  processedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([paymentId])
+  @@index([eventType])
+}
+
+model CleanupJob {
+  id           String    @id @default(uuid())
+  jobId        String
+  job          PrintJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  shopId       String
+  shop         Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  status       String    @default("PENDING")
+  scheduledFor DateTime
+  executedAt   DateTime?
+  errorDetails String?
+  createdAt    DateTime  @default(now())
+
+  @@index([jobId])
+  @@index([shopId])
+  @@index([status])
+}
+
+model Receipt {
+  id                   String   @id @default(uuid())
+  jobId                String
+  job                  PrintJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  shopId               String
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  receiptNumber        String   @unique
+  customerName         String
+  shopDetailsJson      Json
+  jobDetailsJson       Json
+  pricingBreakdownJson Json
+  paymentDetailsJson   Json
+  issuedAt             DateTime @default(now())
+
+  @@index([jobId])
+  @@index([shopId])
+  @@index([receiptNumber])
+}
+
+model ShopSettings {
+  id                 String   @id @default(uuid())
+  shopId             String   @unique
+  shop               Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  pricingRulesJson   Json
+  operatingHoursJson Json?
+  autoPrintEnabled   Boolean  @default(false)
+  cashAccepted       Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  actorId      String?
+  actorRole    String?
+  user         User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  shopId       String?
+  shop         Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  action       String
+  entity       String
+  entityId     String?
+  metadataJson Json?
+  ipAddress    String?
+  createdAt    DateTime @default(now())
+
+  @@index([actorId])
+  @@index([shopId])
+  @@index([action])
+  @@index([entity])
+  @@index([createdAt])
+}
+
+model IdempotencyKey {
+  id              String   @id @default(uuid())
+  key             String   @unique
+  resource        String
+  responsePayload Json?
+  createdAt       DateTime @default(now())
+  expiresAt       DateTime
+
+  @@index([key])
+  @@index([expiresAt])
+}
+
+model PaymentProviderAccount {
+  id                   String   @id @default(uuid())
+  shopId               String
+  shop                 Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  provider             String   @default("CASHFREE")
+  merchantId           String?
+  encryptedCredentials String?
+  environment          String   @default("SANDBOX")
+  status               String   @default("ACTIVE")
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([shopId])
+  @@index([provider])
+}
