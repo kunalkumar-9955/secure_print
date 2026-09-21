@@ -2,6 +2,25 @@ export const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
   (typeof window !== 'undefined' ? '' : 'http://127.0.0.1:4000');
 
+export function setAuthToken(token: string) {
+  if (typeof window !== 'undefined' && token) {
+    sessionStorage.setItem('secureprint_auth_token', token);
+  }
+}
+
+export function getAuthToken(): string | null {
+  if (typeof window !== 'undefined') {
+    return sessionStorage.getItem('secureprint_auth_token');
+  }
+  return null;
+}
+
+export function clearAuthToken() {
+  if (typeof window !== 'undefined') {
+    sessionStorage.removeItem('secureprint_auth_token');
+  }
+}
+
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
@@ -11,6 +30,11 @@ export async function apiRequest<T = any>(
   const headers = new Headers(options.headers || {});
   if (!headers.has('Content-Type') && !(options.body instanceof FormData)) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  const token = getAuthToken();
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
   }
 
   const response = await fetch(url, {

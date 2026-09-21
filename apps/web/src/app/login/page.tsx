@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, setAuthToken } from '@/lib/api-client';
 import { Printer, Lock, Mail, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -23,7 +23,11 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      if (data.user.role === 'SUPER_ADMIN') {
+      if (data?.token) {
+        setAuthToken(data.token);
+      }
+
+      if (data?.user?.role === 'SUPER_ADMIN') {
         router.push('/super-admin');
       } else {
         router.push('/admin');
@@ -33,11 +37,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillPreset = (e: string, p: string) => {
-    setEmail(e);
-    setPassword(p);
   };
 
   return (
@@ -114,29 +113,6 @@ export default function LoginPage() {
               )}
             </button>
           </form>
-
-          {/* Quick Presets for Pair Programming & Testing */}
-          <div className="pt-4 border-t border-slate-100 space-y-2">
-            <div className="text-xs text-slate-500 font-medium">Quick Credentials:</div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => fillPreset('admin@secureprint.io', 'Admin@123456')}
-                className="text-left p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 text-xs text-slate-700 transition-colors"
-              >
-                <div className="font-semibold text-slate-900">Super Admin</div>
-                <div className="text-[10px] text-slate-500">Platform oversight</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillPreset('owner@apexdigital.com', 'ShopOwner@123')}
-                className="text-left p-2.5 rounded-xl bg-slate-50 border border-slate-200 hover:border-slate-300 text-xs text-slate-700 transition-colors"
-              >
-                <div className="font-semibold text-slate-900">Shop Owner</div>
-                <div className="text-[10px] text-slate-500">Apex Digital Prints</div>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

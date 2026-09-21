@@ -29,8 +29,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
         }
       }
       code = HttpStatus[status] || code;
+    } else if ((exception as any)?.name === 'ZodError') {
+      status = HttpStatus.BAD_REQUEST;
+      code = 'BAD_REQUEST';
+      const zodErrors = (exception as any).errors || [];
+      message = zodErrors.map((e: any) => e.message).join(', ') || 'Validation error';
+      details = zodErrors;
     } else {
-      this.logger.error('Unhandled exception caught in filter', exception);
+      const errMsg = exception instanceof Error ? exception.message : String(exception);
+      const stack = exception instanceof Error ? exception.stack : undefined;
+      this.logger.error(`Unhandled exception caught in filter: ${errMsg}`, stack);
     }
 
     response.status(status).json({

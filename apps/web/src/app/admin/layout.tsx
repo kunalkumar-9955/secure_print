@@ -19,7 +19,7 @@ import {
   DollarSign,
   History,
 } from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, clearAuthToken } from '@/lib/api-client';
 
 const navItems = [
   { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
@@ -42,8 +42,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const handleLogout = async () => {
     try {
       await apiRequest('/api/v1/auth/logout', { method: 'POST' });
-      router.push('/login');
     } catch {
+      // ignore network errors on logout
+    } finally {
+      clearAuthToken();
       router.push('/login');
     }
   };

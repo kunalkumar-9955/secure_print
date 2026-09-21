@@ -18,6 +18,7 @@
     "prisma:generate": "npm --workspace=apps/api run prisma:generate",
     "prisma:migrate": "npm --workspace=apps/api run prisma:migrate",
     "prisma:seed": "npm --workspace=apps/api run prisma:seed",
+    "admin:bootstrap": "npm --workspace=apps/api run admin:bootstrap",
     "start:api": "npm --workspace=apps/api run start:prod"
   },
   "engines": {

@@ -6,6 +6,8 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../../database/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { LoginRateLimitGuard } from '../../common/guards/login-rate-limit.guard';
+import { AdminBootstrapService } from './admin-bootstrap.service';
 
 @Module({
   imports: [
@@ -16,7 +18,14 @@ import { AuditService } from '../audit/audit.service';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, PrismaService, AuditService],
-  exports: [AuthService, JwtModule],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    PrismaService,
+    AuditService,
+    LoginRateLimitGuard,
+    AdminBootstrapService,
+  ],
+  exports: [AuthService, JwtModule, LoginRateLimitGuard],
 })
 export class AuthModule {}

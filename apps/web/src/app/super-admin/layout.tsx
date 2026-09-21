@@ -20,7 +20,7 @@ import {
   BarChart3,
   Settings,
 } from 'lucide-react';
-import { apiRequest } from '@/lib/api-client';
+import { apiRequest, clearAuthToken } from '@/lib/api-client';
 
 import { useQuery } from '@tanstack/react-query';
 import { Loader2, LogIn, UserX } from 'lucide-react';
@@ -57,8 +57,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
   const handleLogout = async () => {
     try {
       await apiRequest('/api/v1/auth/logout', { method: 'POST' });
-      router.push('/login');
     } catch {
+      // ignore logout network errors
+    } finally {
+      clearAuthToken();
       router.push('/login');
     }
   };
