@@ -6,10 +6,10 @@
     "build": "nest build",
     "start": "nest start",
     "start:dev": "nest start --watch",
-    "start:prod": "node dist/src/main.js",
+    "start:prod": "node dist/main.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma db push",
-    "prisma:seed": "node dist/src/database/seed.js",
+    "prisma:seed": "node dist/database/seed.js",
     "test": "jest",
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
