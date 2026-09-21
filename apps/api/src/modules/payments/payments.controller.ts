@@ -54,6 +54,61 @@ export class PaymentsController {
     };
   }
 
+  @Get('public-methods/:jobId')
+  async getPublicMethods(@Param('jobId') jobId: string) {
+    const methods = await this.paymentsService.getPublicPaymentMethods(jobId);
+    return {
+      success: true,
+      data: methods,
+    };
+  }
+
+  @Get('config/:shopId')
+  @UseGuards(JwtAuthGuard, ShopAccessGuard)
+  async getShopPaymentConfig(@Param('shopId') shopId: string) {
+    const config = await this.paymentsService.getShopPaymentConfig(shopId);
+    return {
+      success: true,
+      data: config,
+    };
+  }
+
+  @Post('config/:shopId')
+  @UseGuards(JwtAuthGuard, ShopAccessGuard)
+  async updateShopPaymentConfig(
+    @Param('shopId') shopId: string,
+    @Body('appId') appId: string,
+    @Body('secretKey') secretKey: string,
+    @Body('environment') environment: 'SANDBOX' | 'PRODUCTION',
+    @Body('webhookSecret') webhookSecret?: string,
+  ) {
+    const result = await this.paymentsService.updateShopPaymentConfig(
+      shopId,
+      appId,
+      secretKey,
+      environment,
+      webhookSecret,
+    );
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  @Post('config/:shopId/test')
+  @UseGuards(JwtAuthGuard, ShopAccessGuard)
+  async testShopPaymentConfig(
+    @Body('appId') appId: string,
+    @Body('secretKey') secretKey: string,
+    @Body('environment') environment: 'SANDBOX' | 'PRODUCTION',
+  ) {
+    const result = await this.paymentsService.testShopPaymentConfig(appId, secretKey, environment);
+    return {
+      success: result.valid,
+      data: result,
+    };
+  }
+
   @Get('shop/:shopId')
   @UseGuards(JwtAuthGuard, ShopAccessGuard)
   async getShopPayments(@Param('shopId') shopId: string) {

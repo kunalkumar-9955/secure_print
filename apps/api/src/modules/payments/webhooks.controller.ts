@@ -21,17 +21,38 @@ export class WebhooksController {
     @Headers('x-webhook-timestamp') timestamp: string,
     @Req() req: Request,
   ) {
-    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body);
+    const rawBody =
+      (req as any).rawBody && Buffer.isBuffer((req as any).rawBody)
+        ? (req as any).rawBody.toString('utf8')
+        : typeof req.body === 'string'
+        ? req.body
+        : JSON.stringify(req.body);
 
-    const isValid = this.cashfree.verifyWebhookSignature(rawBody, signature, timestamp);
+    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    const orderId = payload?.data?.order?.order_id || payload?.orderId;
+
+    // Check platform webhook secret first
+    let isValid = this.cashfree.verifyWebhookSignature(rawBody, signature, timestamp);
+
+    // If invalid or platform not configured, check shop-specific webhook secret
+    if (!isValid && orderId) {
+      const payment = await this.prisma.payment.findFirst({
+        where: { providerOrderId: orderId },
+      });
+      if (payment) {
+        const creds = await this.paymentsService.resolveShopCashfreeCredentials(payment.shopId);
+        if (creds?.webhookSecret) {
+          isValid = this.cashfree.verifyWebhookSignature(rawBody, signature, timestamp, creds.webhookSecret);
+        }
+      }
+    }
+
     if (!isValid) {
       this.logger.warn('Cashfree webhook signature verification failed.');
       throw new BadRequestException('Invalid webhook signature.');
     }
 
-    const payload = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    const eventType = payload.type || payload.event || 'PAYMENT_SUCCESS';
-    const orderId = payload.data?.order?.order_id || payload.orderId;
+    const eventType = payload?.type || payload?.event || 'PAYMENT_SUCCESS';
 
     if (!orderId) {
       this.logger.warn('Webhook payload missing order ID.');

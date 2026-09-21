@@ -3,26 +3,94 @@ import { PaymentProvider, CreateOrderParams, CreateOrderResult, ProviderPaymentS
 import { PaymentStatus } from '@secureprint/shared-types';
 import * as crypto from 'crypto';
 
+export interface CashfreeCredentials {
+  appId: string;
+  secretKey: string;
+  webhookSecret?: string;
+  environment?: 'SANDBOX' | 'PRODUCTION';
+}
+
 @Injectable()
 export class CashfreeProvider implements PaymentProvider {
   private readonly logger = new Logger(CashfreeProvider.name);
-  private readonly appId: string;
-  private readonly secretKey: string;
-  private readonly webhookSecret: string;
-  private readonly apiVersion: string;
-  private readonly baseUrl: string;
+  private readonly defaultAppId: string;
+  private readonly defaultSecretKey: string;
+  private readonly defaultWebhookSecret: string;
+  private readonly apiVersion: string = '2023-08-01';
+  private readonly defaultBaseUrl: string;
+  private readonly defaultEnvironment: 'SANDBOX' | 'PRODUCTION';
 
   constructor() {
-    this.appId = process.env.CASHFREE_APP_ID || 'TEST_APP_ID';
-    this.secretKey = process.env.CASHFREE_SECRET_KEY || 'TEST_SECRET_KEY';
-    this.webhookSecret = process.env.CASHFREE_WEBHOOK_SECRET || 'TEST_WEBHOOK_SECRET';
-    this.apiVersion = '2023-08-01';
+    this.defaultAppId = process.env.CASHFREE_APP_ID || '';
+    this.defaultSecretKey = process.env.CASHFREE_SECRET_KEY || '';
+    this.defaultWebhookSecret = process.env.CASHFREE_WEBHOOK_SECRET || '';
 
     const isProd = process.env.CASHFREE_ENV === 'PRODUCTION';
-    this.baseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
+    this.defaultEnvironment = isProd ? 'PRODUCTION' : 'SANDBOX';
+    this.defaultBaseUrl = isProd ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
   }
 
-  async createOrder(params: CreateOrderParams): Promise<CreateOrderResult> {
+  public getEnvironment(): 'SANDBOX' | 'PRODUCTION' {
+    return this.defaultEnvironment;
+  }
+
+  private resolveConfig(credentials?: CashfreeCredentials) {
+    const appId = credentials?.appId || this.defaultAppId;
+    const secretKey = credentials?.secretKey || this.defaultSecretKey;
+    const webhookSecret = credentials?.webhookSecret || this.defaultWebhookSecret;
+    const env = credentials?.environment || this.defaultEnvironment;
+    const baseUrl = env === 'PRODUCTION' ? 'https://api.cashfree.com/pg' : 'https://sandbox.cashfree.com/pg';
+
+    const isConfigured = Boolean(
+      appId &&
+      secretKey &&
+      appId !== 'TEST_APP_ID' &&
+      secretKey !== 'TEST_SECRET_KEY' &&
+      appId.trim() !== '' &&
+      secretKey.trim() !== ''
+    );
+
+    return { appId, secretKey, webhookSecret, env, baseUrl, isConfigured };
+  }
+
+  async testCredentials(credentials: CashfreeCredentials): Promise<{ valid: boolean; message?: string }> {
+    const { appId, secretKey, baseUrl } = this.resolveConfig(credentials);
+
+    if (!appId || !secretKey) {
+      return { valid: false, message: 'App ID and Secret Key are required.' };
+    }
+
+    try {
+      // Light probe to Cashfree PG API to verify credentials
+      const response = await fetch(`${baseUrl}/orders?limit=1`, {
+        method: 'GET',
+        headers: {
+          'x-client-id': appId,
+          'x-client-secret': secretKey,
+          'x-api-version': this.apiVersion,
+        },
+      });
+
+      if (response.ok) {
+        return { valid: true };
+      }
+
+      const data = await response.json().catch(() => ({}));
+      return {
+        valid: false,
+        message: data.message || `Cashfree authentication failed with status ${response.status}.`,
+      };
+    } catch (err: any) {
+      return {
+        valid: false,
+        message: `Network error connecting to Cashfree: ${err.message}`,
+      };
+    }
+  }
+
+  async createOrder(params: CreateOrderParams, credentials?: CashfreeCredentials): Promise<CreateOrderResult> {
+    const { appId, secretKey, baseUrl, env, isConfigured } = this.resolveConfig(credentials);
+
     const payload = {
       order_id: params.orderId,
       order_amount: params.amount,
@@ -39,14 +107,15 @@ export class CashfreeProvider implements PaymentProvider {
       },
     };
 
-    // If using unconfigured test credentials
-    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY' || !this.appId || !this.secretKey) {
+    // If using unconfigured credentials
+    if (!isConfigured) {
       if (process.env.NODE_ENV === 'production') {
-        this.logger.warn('Online payment requested but Cashfree credentials (CASHFREE_APP_ID / CASHFREE_SECRET_KEY) are not configured in production.');
+        this.logger.warn('Online payment requested but Cashfree credentials are not configured in production.');
         throw new ServiceUnavailableException(
           'Online payment gateway is temporarily unconfigured on this shop. Please pay cash at the counter or contact the operator.',
         );
       }
+
       this.logger.log(`[CashfreeProvider Sandbox Simulation] Created order: ${params.orderId} for ₹${params.amount}`);
       return {
         providerOrderId: params.orderId,
@@ -56,12 +125,12 @@ export class CashfreeProvider implements PaymentProvider {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/orders`, {
+      const response = await fetch(`${baseUrl}/orders`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-client-id': this.appId,
-          'x-client-secret': this.secretKey,
+          'x-client-id': appId,
+          'x-client-secret': secretKey,
           'x-api-version': this.apiVersion,
         },
         body: JSON.stringify(payload),
@@ -69,6 +138,7 @@ export class CashfreeProvider implements PaymentProvider {
 
       const data = await response.json();
       if (!response.ok) {
+        this.logger.error(`Cashfree order creation error: ${JSON.stringify(data)}`);
         throw new BadRequestException(data.message || `Cashfree order creation failed with status ${response.status}`);
       }
 
@@ -87,8 +157,10 @@ export class CashfreeProvider implements PaymentProvider {
     }
   }
 
-  async getOrderStatus(providerOrderId: string): Promise<ProviderPaymentStatus> {
-    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY' || !this.appId || !this.secretKey) {
+  async getOrderStatus(providerOrderId: string, credentials?: CashfreeCredentials): Promise<ProviderPaymentStatus> {
+    const { appId, secretKey, baseUrl, isConfigured } = this.resolveConfig(credentials);
+
+    if (!isConfigured) {
       if (process.env.NODE_ENV === 'production') {
         throw new ServiceUnavailableException(
           'Online payment gateway is temporarily unconfigured. Please pay cash at the counter.',
@@ -105,11 +177,11 @@ export class CashfreeProvider implements PaymentProvider {
     }
 
     try {
-      const response = await fetch(`${this.baseUrl}/orders/${providerOrderId}`, {
+      const response = await fetch(`${baseUrl}/orders/${providerOrderId}`, {
         method: 'GET',
         headers: {
-          'x-client-id': this.appId,
-          'x-client-secret': this.secretKey,
+          'x-client-id': appId,
+          'x-client-secret': secretKey,
           'x-api-version': this.apiVersion,
         },
       });
@@ -119,11 +191,38 @@ export class CashfreeProvider implements PaymentProvider {
         throw new BadRequestException(data.message || `Failed to fetch Cashfree order status: ${response.status}`);
       }
 
-      const normalized = this.normalizeStatus(data.order_status);
+      let normalized = this.normalizeStatus(data.order_status);
+      let paymentRef = data.order_token;
+
+      // If order_status is not directly PAID, verify payments collection
+      if (normalized !== PaymentStatus.SUCCESS) {
+        try {
+          const paymentsRes = await fetch(`${baseUrl}/orders/${providerOrderId}/payments`, {
+            method: 'GET',
+            headers: {
+              'x-client-id': appId,
+              'x-client-secret': secretKey,
+              'x-api-version': this.apiVersion,
+            },
+          });
+          if (paymentsRes.ok) {
+            const paymentsData = await paymentsRes.json();
+            if (Array.isArray(paymentsData)) {
+              const successfulPayment = paymentsData.find(
+                (p) => p.payment_status === 'SUCCESS' || p.payment_status === 'PAID'
+              );
+              if (successfulPayment) {
+                normalized = PaymentStatus.SUCCESS;
+                paymentRef = successfulPayment.cf_payment_id?.toString() || paymentRef;
+              }
+            }
+          }
+        } catch { }
+      }
 
       return {
         providerOrderId: data.order_id,
-        providerPaymentId: data.order_token,
+        providerPaymentId: paymentRef,
         status: normalized,
         amount: data.order_amount,
         currency: data.order_currency,
@@ -138,16 +237,24 @@ export class CashfreeProvider implements PaymentProvider {
     }
   }
 
-  verifyWebhookSignature(rawBody: string, signature: string, timestamp: string): boolean {
+  verifyWebhookSignature(
+    rawBody: string,
+    signature: string,
+    timestamp: string,
+    customWebhookSecret?: string,
+  ): boolean {
     if (!signature || !timestamp) return false;
 
     // Simulation bypass for automated test payloads signed with 'mock-test-signature'
     if (signature === 'mock-test-signature') return true;
 
+    const secret = customWebhookSecret || this.defaultWebhookSecret;
+    if (!secret) return false;
+
     try {
       const dataToSign = `${timestamp}${rawBody}`;
       const expectedSignature = crypto
-        .createHmac('sha256', this.webhookSecret)
+        .createHmac('sha256', secret)
         .update(dataToSign)
         .digest('base64');
 

@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ServiceUnavailableException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
-import { CashfreeProvider } from './cashfree.provider';
+import { CashfreeProvider, CashfreeCredentials } from './cashfree.provider';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { AuditService } from '../audit/audit.service';
 import { CleanupService } from '../cleanup/cleanup.service';
 import { PaymentStatus, PaymentMethod, JobStatus } from '@secureprint/shared-types';
+import { encryptJson, decryptJson } from '../../common/utils/crypto.util';
 import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
@@ -18,6 +19,47 @@ export class PaymentsService {
     private auditService: AuditService,
     private cleanupService: CleanupService,
   ) {}
+
+  async resolveShopCashfreeCredentials(shopId: string): Promise<CashfreeCredentials | undefined> {
+    const account = await this.prisma.paymentProviderAccount.findFirst({
+      where: { shopId, provider: 'CASHFREE', status: 'ACTIVE' },
+    });
+
+    if (account && account.encryptedCredentials) {
+      const decrypted = decryptJson<{ appId: string; secretKey: string; webhookSecret?: string }>(
+        account.encryptedCredentials,
+      );
+      if (decrypted?.appId && decrypted?.secretKey) {
+        return {
+          appId: decrypted.appId,
+          secretKey: decrypted.secretKey,
+          webhookSecret: decrypted.webhookSecret,
+          environment: (account.environment as any) || 'SANDBOX',
+        };
+      }
+    }
+
+    // Check platform-level fallback credentials from environment
+    const platformAppId = process.env.CASHFREE_APP_ID;
+    const platformSecretKey = process.env.CASHFREE_SECRET_KEY;
+    if (
+      platformAppId &&
+      platformSecretKey &&
+      platformAppId !== 'TEST_APP_ID' &&
+      platformSecretKey !== 'TEST_SECRET_KEY' &&
+      platformAppId.trim() !== '' &&
+      platformSecretKey.trim() !== ''
+    ) {
+      return {
+        appId: platformAppId,
+        secretKey: platformSecretKey,
+        webhookSecret: process.env.CASHFREE_WEBHOOK_SECRET,
+        environment: process.env.CASHFREE_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+      };
+    }
+
+    return undefined;
+  }
 
   async createOnlineOrder(jobId: string) {
     const job = await this.prisma.printJob.findUnique({
@@ -43,6 +85,14 @@ export class PaymentsService {
       throw new BadRequestException('Invalid calculated print amount.');
     }
 
+    // Resolve shop credentials or fallback
+    const credentials = await this.resolveShopCashfreeCredentials(job.shopId);
+    if (!credentials && process.env.NODE_ENV === 'production') {
+      throw new ServiceUnavailableException(
+        'Online payment gateway is temporarily unconfigured on this shop. Please pay cash at the counter or contact the operator.',
+      );
+    }
+
     const orderId = `SP_ORD_${job.jobCode}_${Date.now()}`;
 
     // Create payment record in DB
@@ -58,20 +108,26 @@ export class PaymentsService {
       },
     });
 
-    // Request order from Cashfree provider
-    const returnUrl = `${process.env.PUBLIC_BASE_URL || 'http://localhost:3000'}/job/${job.id}/payment?order_id=${orderId}`;
-    const orderResult = await this.cashfree.createOrder({
-      orderId,
-      amount: finalAmount,
-      currency: pricing.currency || 'INR',
-      customerDetails: {
-        customerId: job.session.id,
-        customerName: job.session.customerName,
+    // Request order from Cashfree provider using resolved credentials
+    const returnUrl = `${process.env.PUBLIC_BASE_URL || 'https://secure-print-web.vercel.app'}/job/${job.id}/payment?order_id=${orderId}`;
+    const notifyUrl = `${process.env.API_BASE_URL || 'https://secure-print-api.onrender.com'}/api/v1/webhooks/cashfree`;
+
+    const orderResult = await this.cashfree.createOrder(
+      {
+        orderId,
+        amount: finalAmount,
+        currency: pricing.currency || 'INR',
+        customerDetails: {
+          customerId: job.session.id,
+          customerName: job.session.customerName,
+        },
+        orderMeta: {
+          returnUrl,
+          notifyUrl,
+        },
       },
-      orderMeta: {
-        returnUrl,
-      },
-    });
+      credentials,
+    );
 
     await this.prisma.payment.update({
       where: { id: payment.id },
@@ -98,6 +154,7 @@ export class PaymentsService {
       paymentUrl: orderResult.paymentUrl,
       amount: finalAmount,
       currency: pricing.currency || 'INR',
+      environment: credentials?.environment || (process.env.CASHFREE_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX'),
     };
   }
 
@@ -114,8 +171,10 @@ export class PaymentsService {
       return { status: PaymentStatus.SUCCESS, verified: true };
     }
 
+    const credentials = await this.resolveShopCashfreeCredentials(payment.shopId);
+
     // Query payment provider server-to-server
-    const providerStatus = await this.cashfree.getOrderStatus(providerOrderId);
+    const providerStatus = await this.cashfree.getOrderStatus(providerOrderId, credentials);
 
     // Strict validation checks
     if (providerStatus.status !== PaymentStatus.SUCCESS) {
@@ -245,13 +304,39 @@ export class PaymentsService {
     const now = new Date();
 
     const result = await this.prisma.$transaction(async (tx) => {
+      const existingPayment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        include: {
+          job: {
+            include: {
+              shop: true,
+              session: true,
+              files: true,
+              receipts: { take: 1 },
+            },
+          },
+        },
+      });
+
+      if (!existingPayment) throw new NotFoundException('Payment not found');
+
+      // If already processed to SUCCESS with receipt, skip duplicate execution
+      if (existingPayment.status === PaymentStatus.SUCCESS && existingPayment.job.receipts.length > 0) {
+        return {
+          payment: existingPayment,
+          job: existingPayment.job,
+          receipt: existingPayment.job.receipts[0],
+          alreadyCompleted: true,
+        };
+      }
+
       const payment = await tx.payment.update({
         where: { id: paymentId },
         data: {
           status: PaymentStatus.SUCCESS,
-          verifiedAt: now,
-          providerPaymentId: providerPaymentRef,
-          confirmedByUserId,
+          verifiedAt: existingPayment.verifiedAt || now,
+          providerPaymentId: providerPaymentRef || existingPayment.providerPaymentId,
+          confirmedByUserId: confirmedByUserId || existingPayment.confirmedByUserId,
         },
         include: {
           job: {
@@ -275,51 +360,67 @@ export class PaymentsService {
         },
       });
 
-      // Create Receipt from database metadata
-      const receiptNumber = `RCP-${job.jobCode}-${Date.now().toString().slice(-4)}`;
-      const pricing = job.pricingSnapshotJson as any;
-
-      const receipt = await tx.receipt.create({
-        data: {
-          jobId: job.id,
-          shopId: job.shopId,
-          receiptNumber,
-          customerName: job.session.customerName,
-          shopDetailsJson: {
-            name: job.shop.name,
-            address: job.shop.address,
-            phone: job.shop.phone,
-          },
-          jobDetailsJson: {
-            jobCode: job.jobCode,
-            options: job.printOptionsJson,
-            files: job.files.map((f) => ({ name: f.originalName, pages: f.pageCount })),
-          },
-          pricingBreakdownJson: pricing,
-          paymentDetailsJson: {
-            method: payment.provider,
-            amount: payment.amount,
-            currency: payment.currency,
-            reference: providerPaymentRef,
-            paidAt: now.toISOString(),
-          },
-          issuedAt: now,
-        },
+      // Check if receipt already exists
+      let receipt = await tx.receipt.findFirst({
+        where: { jobId: job.id },
       });
 
-      // Create CleanupJob record
-      const cleanupDate = new Date(now.getTime() + 10000); // 10-second server-side delay
-      await tx.cleanupJob.create({
-        data: {
-          jobId: job.id,
-          shopId: job.shopId,
-          status: 'PENDING',
-          scheduledFor: cleanupDate,
-        },
+      if (!receipt) {
+        const receiptNumber = `RCP-${job.jobCode}-${Date.now().toString().slice(-4)}`;
+        const pricing = job.pricingSnapshotJson as any;
+
+        receipt = await tx.receipt.create({
+          data: {
+            jobId: job.id,
+            shopId: job.shopId,
+            receiptNumber,
+            customerName: job.session.customerName,
+            shopDetailsJson: {
+              name: job.shop.name,
+              address: job.shop.address,
+              phone: job.shop.phone,
+            },
+            jobDetailsJson: {
+              jobCode: job.jobCode,
+              options: job.printOptionsJson,
+              files: job.files.map((f) => ({ name: f.originalName, pages: f.pageCount })),
+            },
+            pricingBreakdownJson: pricing,
+            paymentDetailsJson: {
+              method: payment.provider,
+              amount: payment.amount,
+              currency: payment.currency,
+              reference: providerPaymentRef,
+              paidAt: now.toISOString(),
+            },
+            issuedAt: now,
+          },
+        });
+      }
+
+      // Check if cleanup job already exists
+      const existingCleanup = await tx.cleanupJob.findFirst({
+        where: { jobId: job.id },
       });
 
-      return { payment, job, receipt };
+      if (!existingCleanup) {
+        const cleanupDate = new Date(now.getTime() + 10000); // 10-second server-side delay
+        await tx.cleanupJob.create({
+          data: {
+            jobId: job.id,
+            shopId: job.shopId,
+            status: 'PENDING',
+            scheduledFor: cleanupDate,
+          },
+        });
+      }
+
+      return { payment, job, receipt, alreadyCompleted: false };
     });
+
+    if (result.alreadyCompleted) {
+      return result;
+    }
 
     // Realtime notification: Payment Verified
     this.realtime.emitPaymentUpdate(result.job.id, result.job.shopId, {
@@ -332,6 +433,130 @@ export class PaymentsService {
     await this.cleanupService.scheduleDocumentCleanup(result.job.id, result.job.shopId);
 
     return result;
+  }
+
+  async getShopPaymentConfig(shopId: string) {
+    const account = await this.prisma.paymentProviderAccount.findFirst({
+      where: { shopId, provider: 'CASHFREE' },
+    });
+
+    if (account && account.encryptedCredentials) {
+      const decrypted = decryptJson<{ appId: string; secretKey: string; webhookSecret?: string }>(
+        account.encryptedCredentials,
+      );
+      if (decrypted?.appId) {
+        const appId = decrypted.appId;
+        const masked = appId.length > 8 ? `${appId.slice(0, 4)}••••${appId.slice(-4)}` : '••••••••';
+        return {
+          isConfigured: account.status === 'ACTIVE',
+          status: account.status,
+          provider: 'CASHFREE',
+          environment: account.environment,
+          appIdMasked: masked,
+          hasWebhookSecret: Boolean(decrypted.webhookSecret),
+          updatedAt: account.updatedAt,
+        };
+      }
+    }
+
+    // Check platform fallback
+    const platformAppId = process.env.CASHFREE_APP_ID;
+    const isPlatform = Boolean(
+      platformAppId &&
+      platformAppId !== 'TEST_APP_ID' &&
+      platformAppId.trim() !== ''
+    );
+
+    return {
+      isConfigured: isPlatform,
+      status: isPlatform ? 'ACTIVE' : 'NOT_CONFIGURED',
+      provider: 'CASHFREE',
+      environment: process.env.CASHFREE_ENV === 'PRODUCTION' ? 'PRODUCTION' : 'SANDBOX',
+      appIdMasked: isPlatform ? `${platformAppId!.slice(0, 4)}••••` : null,
+      hasWebhookSecret: Boolean(process.env.CASHFREE_WEBHOOK_SECRET),
+      isPlatformDefault: isPlatform,
+    };
+  }
+
+  async updateShopPaymentConfig(
+    shopId: string,
+    appId: string,
+    secretKey: string,
+    environment: 'SANDBOX' | 'PRODUCTION' = 'SANDBOX',
+    webhookSecret?: string,
+  ) {
+    const testResult = await this.cashfree.testCredentials({
+      appId,
+      secretKey,
+      environment,
+    });
+
+    if (!testResult.valid) {
+      throw new BadRequestException(
+        `Failed to verify Cashfree credentials: ${testResult.message || 'Invalid API keys'}`,
+      );
+    }
+
+    const encryptedCredentials = encryptJson({
+      appId,
+      secretKey,
+      webhookSecret,
+    });
+
+    const existing = await this.prisma.paymentProviderAccount.findFirst({
+      where: { shopId, provider: 'CASHFREE' },
+    });
+
+    if (existing) {
+      await this.prisma.paymentProviderAccount.update({
+        where: { id: existing.id },
+        data: {
+          encryptedCredentials,
+          environment,
+          status: 'ACTIVE',
+          updatedAt: new Date(),
+        },
+      });
+    } else {
+      await this.prisma.paymentProviderAccount.create({
+        data: {
+          shopId,
+          provider: 'CASHFREE',
+          encryptedCredentials,
+          environment,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Cashfree payment gateway configured and verified successfully.',
+      environment,
+    };
+  }
+
+  async testShopPaymentConfig(appId: string, secretKey: string, environment: 'SANDBOX' | 'PRODUCTION') {
+    return this.cashfree.testCredentials({ appId, secretKey, environment });
+  }
+
+  async getPublicPaymentMethods(jobId: string) {
+    const job = await this.prisma.printJob.findUnique({
+      where: { id: jobId },
+      include: {
+        shop: {
+          include: { shopSettings: true },
+        },
+      },
+    });
+    if (!job) throw new NotFoundException('Print job not found.');
+
+    const creds = await this.resolveShopCashfreeCredentials(job.shopId);
+    return {
+      isOnlineConfigured: Boolean(creds),
+      environment: creds?.environment || 'SANDBOX',
+      cashAccepted: job.shop.shopSettings?.cashAccepted ?? true,
+    };
   }
 
   async getShopPayments(shopId: string, limit = 50) {
