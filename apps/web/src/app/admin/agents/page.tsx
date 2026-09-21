@@ -167,7 +167,8 @@ export default function AdminAgentsPage() {
 
         <div className="flex items-center space-x-3">
           <a
-            href="/api/v1/agent/download"
+            href="/SecurePrint-Windows-Agent.zip"
+            download="SecurePrint-Windows-Agent.zip"
             className="inline-flex items-center space-x-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold px-4 py-2.5 rounded-xl shadow-sm transition-all text-xs"
           >
             <Download className="w-4 h-4 text-slate-500" />
@@ -213,7 +214,8 @@ export default function AdminAgentsPage() {
               <span>Connect First Counter PC</span>
             </button>
             <a
-              href="/api/v1/agent/download"
+              href="/SecurePrint-Windows-Agent.zip"
+              download="SecurePrint-Windows-Agent.zip"
               className="inline-flex items-center space-x-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors"
             >
               <Download className="w-4 h-4 text-slate-500" />
@@ -338,7 +340,8 @@ export default function AdminAgentsPage() {
                 Download the lightweight SecurePrint native agent on the PC connected to your printers:
               </p>
               <a
-                href="/api/v1/agent/download"
+                href="/SecurePrint-Windows-Agent.zip"
+                download="SecurePrint-Windows-Agent.zip"
                 className="inline-flex items-center justify-center space-x-2 w-full py-2.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 rounded-xl font-bold text-xs shadow-sm transition-all"
               >
                 <Download className="w-4 h-4 text-emerald-600" />
@@ -350,10 +353,10 @@ export default function AdminAgentsPage() {
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
               <div className="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
                 <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">2</span>
-                <span>Open SecurePrint.Agent.exe</span>
+                <span>Run Start-Agent.bat (or SecurePrint.Agent.exe)</span>
               </div>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Extract the downloaded zip folder on your counter computer and run <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-800 font-semibold">SecurePrint.Agent.exe</code>. Make sure all your counter printers are turned on.
+                Extract the downloaded zip on your counter computer and double-click <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-800 font-semibold">Start-Agent.bat</code>. It will automatically connect to SecurePrint Cloud and detect your local printers.
               </p>
             </div>
 

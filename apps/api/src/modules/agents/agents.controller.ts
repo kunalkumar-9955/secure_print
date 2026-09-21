@@ -134,9 +134,13 @@ export class AgentsController {
   @Get('agent/download')
   async downloadAgent(@Res() res: Response) {
     const candidates = [
-      path.resolve(__dirname, '../../../../public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(process.cwd(), 'apps/api/public/SecurePrint-Windows-Agent.zip'),
       path.resolve(process.cwd(), 'public/SecurePrint-Windows-Agent.zip'),
-      path.resolve('E:/SecurePrint/apps/api/public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(__dirname, '../../../../apps/api/public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(__dirname, '../../../../public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(__dirname, '../../../public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(__dirname, '../../public/SecurePrint-Windows-Agent.zip'),
+      path.resolve(__dirname, '../public/SecurePrint-Windows-Agent.zip'),
     ];
 
     const finalPath = candidates.find((p) => fs.existsSync(p));
