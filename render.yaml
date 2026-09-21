@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: secureprint-api
+    runtime: node
+    plan: starter
+    rootDir: .
+    buildCommand: npm ci && npm --workspace=apps/api run prisma:generate && npm --workspace=packages/shared-types run build && npm --workspace=packages/config run build && npm --workspace=packages/validation run build && npm --workspace=apps/api run build
+    startCommand: npm --workspace=apps/api run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: TZ
+        value: Asia/Kolkata
