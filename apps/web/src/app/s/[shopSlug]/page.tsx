@@ -1,32 +1,76 @@
+'use client';
+
 import React from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { Printer, MapPin, Phone, ArrowRight, ShieldCheck, FileText, CheckCircle2 } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/api-client';
+import {
+  Printer,
+  MapPin,
+  Phone,
+  ArrowRight,
+  ShieldCheck,
+  FileText,
+  CheckCircle2,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
+} from 'lucide-react';
 
-async function getShop(slug: string) {
-  try {
-    const apiUrl = process.env.INTERNAL_API_URL || 'http://127.0.0.1:4000';
-    const res = await fetch(`${apiUrl}/api/v1/shops/public/${slug}`, {
-      cache: 'no-store',
-    });
-    if (!res.ok) return null;
-    const json = await res.json();
-    return json.data;
-  } catch {
-    return null;
+export default function ShopLandingPage() {
+  const params = useParams();
+  const shopSlug = (params?.shopSlug as string) || '';
+
+  const {
+    data: shop,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
+    queryKey: ['public-shop', shopSlug],
+    queryFn: () => apiRequest(`/api/v1/shops/public/${shopSlug}`),
+    enabled: !!shopSlug,
+    retry: 2,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-600 mb-4 animate-pulse shadow-sm">
+          <Printer className="w-6 h-6" />
+        </div>
+        <div className="flex items-center space-x-2 text-slate-600 font-medium text-sm">
+          <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
+          <span>Connecting to SecurePrint Counter...</span>
+        </div>
+      </div>
+    );
   }
-}
 
-export default async function ShopLandingPage({
-  params,
-}: {
-  params: Promise<{ shopSlug: string }>;
-}) {
-  const { shopSlug } = await params;
-  const shop = await getShop(shopSlug);
-
-  if (!shop) {
-    notFound();
+  if (isError || !shop) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4 sm:p-6">
+        <div className="max-w-md w-full bg-white p-6 rounded-2xl border border-slate-200 shadow-sm text-center space-y-4">
+          <div className="w-12 h-12 rounded-2xl bg-red-50 border border-red-200 flex items-center justify-center text-red-600 mx-auto">
+            <AlertCircle className="w-6 h-6" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-xl font-bold text-slate-900">Print Shop Not Available</h1>
+            <p className="text-xs text-slate-500">
+              The requested print counter ({shopSlug || 'unknown'}) is currently offline or unreachable.
+            </p>
+          </div>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Check Counter Again</span>
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const pricing = shop.shopSettings?.pricingRulesJson || {
@@ -56,7 +100,9 @@ export default async function ShopLandingPage({
         {/* Shop Info Card */}
         <div className="bg-white p-6 rounded-2xl space-y-4 shadow-sm border border-slate-200">
           <div className="space-y-1">
-            <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-600">Official Print Partner</span>
+            <span className="text-[11px] uppercase font-bold tracking-wider text-emerald-600">
+              Official Print Partner
+            </span>
             <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{shop.name}</h1>
           </div>
 
@@ -82,11 +128,17 @@ export default async function ShopLandingPage({
           <div className="grid grid-cols-2 gap-3">
             <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-1">
               <div className="text-xs text-slate-500 font-medium">B&W Document</div>
-              <div className="text-xl font-extrabold text-slate-900">₹{pricing.ratePerBwPage}<span className="text-[11px] text-slate-500 font-normal"> / page</span></div>
+              <div className="text-xl font-extrabold text-slate-900">
+                ₹{pricing.ratePerBwPage}
+                <span className="text-[11px] text-slate-500 font-normal"> / page</span>
+              </div>
             </div>
             <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-center space-y-1">
               <div className="text-xs text-emerald-700 font-medium">Color Document</div>
-              <div className="text-xl font-extrabold text-emerald-700">₹{pricing.ratePerColorPage}<span className="text-[11px] text-emerald-600 font-normal"> / page</span></div>
+              <div className="text-xl font-extrabold text-emerald-700">
+                ₹{pricing.ratePerColorPage}
+                <span className="text-[11px] text-emerald-600 font-normal"> / page</span>
+              </div>
             </div>
           </div>
           <div className="text-[11px] text-slate-500 text-center flex items-center justify-center space-x-1.5">
@@ -102,7 +154,8 @@ export default async function ShopLandingPage({
             <span>Automatic Document Shredding</span>
           </div>
           <p className="text-emerald-700 text-[11px] leading-relaxed">
-            Your files are private. Documents are permanently erased from both cloud storage and shop computers 10 seconds after verified payment.
+            Your files are private. Documents are permanently erased from both cloud storage and shop
+            computers 10 seconds after verified payment.
           </p>
         </div>
 
