@@ -26,6 +26,6 @@ import { AdminBootstrapService } from './admin-bootstrap.service';
     LoginRateLimitGuard,
     AdminBootstrapService,
   ],
-  exports: [AuthService, JwtModule, LoginRateLimitGuard],
+  exports: [AuthService, JwtModule, LoginRateLimitGuard, AdminBootstrapService],
 })
 export class AuthModule {}

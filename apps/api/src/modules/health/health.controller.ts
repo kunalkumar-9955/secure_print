@@ -1,12 +1,19 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Logger } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import { StorageService } from '../storage/storage.service';
+import { AdminBootstrapService } from '../auth/admin-bootstrap.service';
+import { execSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
 
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     private prisma: PrismaService,
     private storage: StorageService,
+    private adminBootstrap: AdminBootstrapService,
   ) {}
 
   @Get()
@@ -71,6 +78,72 @@ export class HealthController {
       status: 'HEALTHY',
       configuredUrl: redisUrl.replace(/\/\/[^@]+@/, '//***@'),
       queueType: 'BULLMQ_INTEGRATED',
+    };
+  }
+
+  @Get('init-db')
+  async initDb() {
+    const candidatePaths = [
+      path.resolve(__dirname, '../../prisma/schema.prisma'),
+      path.resolve(__dirname, '../../../prisma/schema.prisma'),
+      path.resolve(__dirname, '../../../../apps/api/prisma/schema.prisma'),
+      path.resolve(process.cwd(), 'apps/api/prisma/schema.prisma'),
+      path.resolve(process.cwd(), 'prisma/schema.prisma'),
+    ];
+    const schemaPath = candidatePaths.find((p) => fs.existsSync(p));
+
+    const prismaBins = [
+      path.resolve(process.cwd(), 'node_modules/.bin/prisma'),
+      path.resolve(process.cwd(), 'apps/api/node_modules/.bin/prisma'),
+      path.resolve(__dirname, '../../../../node_modules/.bin/prisma'),
+      'npx prisma',
+    ];
+
+    let pushLog = '';
+    let pushSuccess = false;
+
+    if (schemaPath) {
+      for (const bin of prismaBins) {
+        try {
+          pushLog = execSync(`${bin} db push --schema="${schemaPath}" --skip-generate --accept-data-loss`, {
+            env: process.env,
+          }).toString();
+          pushSuccess = true;
+          break;
+        } catch (e: any) {
+          pushLog = `Failed with ${bin}: ${e.message}\n${e.stdout?.toString() || ''}\n${e.stderr?.toString() || ''}`;
+        }
+      }
+    } else {
+      pushLog = `Could not find schema.prisma in: ${candidatePaths.join(', ')}`;
+    }
+
+    let bootstrapLog = '';
+    try {
+      await this.adminBootstrap.ensureSuperAdmin();
+      await this.adminBootstrap.ensureSubscriptionPlans();
+      await this.adminBootstrap.ensureDemoShopOwner();
+      bootstrapLog = 'Admin and demo shop bootstrapped successfully';
+    } catch (e: any) {
+      bootstrapLog = `Bootstrap failed: ${e.message}`;
+    }
+
+    let userCount = 0;
+    let shopCount = 0;
+    try {
+      userCount = await this.prisma.user.count();
+      shopCount = await this.prisma.shop.count();
+    } catch (e: any) {
+      // count failed
+    }
+
+    return {
+      success: pushSuccess,
+      schemaPath,
+      pushLog,
+      bootstrapLog,
+      userCount,
+      shopCount,
     };
   }
 }
