@@ -1,7 +1,0 @@
-E:\SecurePrint\apps\api\public\agent-dist\SecurePrint.Agent.exe
-E:\SecurePrint\apps\api\public\agent-dist\SecurePrint.Agent.dll
-E:\SecurePrint\apps\api\public\agent-dist\SecurePrint.Agent.deps.json
-E:\SecurePrint\apps\api\public\agent-dist\SecurePrint.Agent.runtimeconfig.json
-E:\SecurePrint\apps\api\public\agent-dist\SecurePrint.Agent.pdb
-E:\SecurePrint\apps\api\public\agent-dist\CommunityToolkit.Mvvm.dll
-E:\SecurePrint\apps\api\public\agent-dist\Hardcodet.NotifyIcon.Wpf.dll

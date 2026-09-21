@@ -17,6 +17,7 @@ namespace SecurePrint.Agent
         private readonly DispatcherTimer _heartbeatTimer;
         private readonly DispatcherTimer _jobPollingTimer;
         private bool _isProcessingJob = false;
+        private bool _isExplicitExit = false;
 
         public MainWindow()
         {
@@ -28,7 +29,8 @@ namespace SecurePrint.Agent
 
             TxtMachineInfo.Text = $"Host: {_config.MachineName} | Installation ID: {_config.InstallationId}";
 
-            if (!string.IsNullOrEmpty(_config.ShopId))
+            var token = _config.GetDecryptedToken();
+            if (!string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(_config.ShopId))
             {
                 TxtPairingTitle.Text = "Computer Connected";
                 TxtPairingHelp.Text = $"Shop Name: {_config.ShopName ?? _config.ShopId} | Status: Connected & Online | Host: {_config.MachineName}";
@@ -36,6 +38,9 @@ namespace SecurePrint.Agent
                 TxtStatus.Text = "ONLINE";
                 TxtStatus.Foreground = System.Windows.Media.Brushes.LightGreen;
                 StatusBadge.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 83, 45));
+
+                // Register Windows auto-start on boot
+                AgentConfig.RegisterAutoStartup(true);
             }
             else
             {
@@ -64,33 +69,67 @@ namespace SecurePrint.Agent
             _jobPollingTimer.Tick += async (s, e) => await PollPendingJobsAsync();
             _jobPollingTimer.Start();
 
-            if (!string.IsNullOrEmpty(_config.PairingToken))
+            if (!string.IsNullOrEmpty(token))
             {
                 Loaded += async (s, e) =>
                 {
+                    // Check if started with --background
+                    if (Environment.GetCommandLineArgs().Any(a => string.Equals(a, "--background", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Hide();
+                    }
+
                     await DoHeartbeatAsync();
                     await PollPendingJobsAsync();
                 };
             }
         }
 
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!_isExplicitExit)
+            {
+                e.Cancel = true;
+                Hide();
+                Log("SecurePrint Agent minimized to background. Windows will continue processing print jobs automatically.");
+                return;
+            }
+
+            base.OnClosing(e);
+        }
+
         private void Log(string message)
         {
-            var entry = $"[{DateTime.Now:HH:mm:ss}] {message}\n";
-            TxtLogs.AppendText(entry);
-            TxtLogs.ScrollToEnd();
+            Dispatcher.Invoke(() =>
+            {
+                var entry = $"[{DateTime.Now:HH:mm:ss}] {message}\n";
+                TxtLogs.AppendText(entry);
+                TxtLogs.ScrollToEnd();
+            });
         }
 
         private void RefreshPrinters()
         {
             try
             {
-                Log("Discovering Windows print queues via System.Printing...");
+                Log("Discovering physical Windows printers (virtual printers filtered)...");
                 var printers = _spoolerService.DiscoverPrinters();
-                ListPrinters.ItemsSource = printers;
-                Log($"Discovered {printers.Count} Windows printers.");
 
-                if (!string.IsNullOrEmpty(_config.PairingToken) && printers.Count > 0)
+                // If shop has exactly one physical printer, ensure it is set as default
+                if (printers.Count == 1)
+                {
+                    printers[0].IsDefault = true;
+                }
+                else if (printers.Count > 1 && !printers.Any(p => p.IsDefault))
+                {
+                    printers[0].IsDefault = true;
+                }
+
+                ListPrinters.ItemsSource = printers;
+                Log($"Discovered {printers.Count} usable physical Windows printers.");
+
+                var token = _config.GetDecryptedToken();
+                if (!string.IsNullOrEmpty(token) && printers.Count > 0)
                 {
                     Task.Run(async () =>
                     {
@@ -131,6 +170,10 @@ namespace SecurePrint.Agent
                 TxtStatus.Text = "ONLINE";
                 StatusBadge.Background = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(20, 83, 45));
                 Log($"Pairing successful. Shop Name: {shopName} (Shop ID: {shopId})");
+
+                // Enable Windows auto-startup on boot
+                AgentConfig.RegisterAutoStartup(true);
+
                 RefreshPrinters();
                 await DoHeartbeatAsync();
                 await PollPendingJobsAsync();
@@ -158,7 +201,7 @@ namespace SecurePrint.Agent
 
             if (selectedPrinter == null)
             {
-                MessageBox.Show("Please select a printer or ensure a default printer exists.", "No Printer Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Please select a physical printer or ensure a default printer exists.", "No Printer Selected", MessageBoxButton.OK, MessageBoxImage.Warning);
                 return;
             }
 
@@ -179,9 +222,26 @@ namespace SecurePrint.Agent
                                             $"Status: Verified Real Physical Spooling\n" +
                                             $"========================================\n");
 
-                _spoolerService.SubmitDocumentToQueue(selectedPrinter.WindowsPrinterName, tempFile, copies: 1, duplex: false, color: false);
-                Log($"Job submitted to Windows Spooler successfully for '{selectedPrinter.WindowsPrinterName}'!");
-                MessageBox.Show($"Test document submitted to '{selectedPrinter.WindowsPrinterName}'. Check your physical printer / spooler queue.", "Print Submitted", MessageBoxButton.OK, MessageBoxImage.Information);
+                var (success, status, err) = _spoolerService.SubmitAndTrackJob(
+                    selectedPrinter.WindowsPrinterName,
+                    tempFile,
+                    copies: 1,
+                    duplex: false,
+                    color: false,
+                    "SP-TEST",
+                    Log
+                );
+
+                if (success)
+                {
+                    Log($"[SUCCESS] Real test document spooled successfully to '{selectedPrinter.WindowsPrinterName}'!");
+                    MessageBox.Show($"Test document sent to '{selectedPrinter.WindowsPrinterName}'. Check your physical printer paper tray.", "Print Submitted", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+                else
+                {
+                    Log($"[ERROR] Test print failed on '{selectedPrinter.WindowsPrinterName}': {err}");
+                    MessageBox.Show($"Test print error on '{selectedPrinter.WindowsPrinterName}': {err}", "Print Failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
             }
             catch (Exception ex)
             {
@@ -192,7 +252,8 @@ namespace SecurePrint.Agent
 
         private async Task DoHeartbeatAsync()
         {
-            if (string.IsNullOrEmpty(_config.PairingToken)) return;
+            var token = _config.GetDecryptedToken();
+            if (string.IsNullOrEmpty(token)) return;
 
             var ok = await _client.SendHeartbeatAsync();
             if (ok)
@@ -202,14 +263,15 @@ namespace SecurePrint.Agent
             }
             else
             {
-                TxtStatus.Text = "OFFLINE";
-                TxtFooter.Text = $"Heartbeat missed at {DateTime.Now:HH:mm:ss}";
+                TxtStatus.Text = "RECONNECTING";
+                TxtFooter.Text = $"Heartbeat missed at {DateTime.Now:HH:mm:ss} - Retrying connection...";
             }
         }
 
         private async Task PollPendingJobsAsync()
         {
-            if (string.IsNullOrEmpty(_config.PairingToken) || _isProcessingJob) return;
+            var token = _config.GetDecryptedToken();
+            if (string.IsNullOrEmpty(token) || _isProcessingJob) return;
 
             _isProcessingJob = true;
             try
@@ -245,17 +307,32 @@ namespace SecurePrint.Agent
                         var isColor = string.Equals(job.ColorMode, "COLOR", StringComparison.OrdinalIgnoreCase);
                         var isDuplex = !string.Equals(job.Duplex, "NONE", StringComparison.OrdinalIgnoreCase);
 
-                        _spoolerService.SubmitDocumentToQueue(
+                        var (success, status, err) = _spoolerService.SubmitAndTrackJob(
                             job.PrinterName,
                             tempFilePath,
                             job.Copies,
                             isDuplex,
-                            isColor
+                            isColor,
+                            job.JobCode,
+                            Log
                         );
 
-                        Log($"[SPOOLER] Job {job.JobCode} successfully spooled to '{job.PrinterName}'!");
-                        await _client.UpdateAttemptStatusAsync(job.AttemptId, "COMPLETED", "Spooler accepted print job");
-                        Log($"[SUCCESS] Job {job.JobCode} marked COMPLETED in SecurePrint Cloud.");
+                        if (success)
+                        {
+                            Log($"[SPOOLER] Job {job.JobCode} successfully completed Windows spooling to '{job.PrinterName}'!");
+                            await _client.UpdateAttemptStatusAsync(job.AttemptId, "COMPLETED", "Spooler completed print job");
+                            Log($"[SUCCESS] Job {job.JobCode} marked COMPLETED in SecurePrint Cloud.");
+                        }
+                        else if (status == "FAILED")
+                        {
+                            Log($"[ERROR] Job {job.JobCode} failed: {err}");
+                            await _client.UpdateAttemptStatusAsync(job.AttemptId, "FAILED", err);
+                        }
+                        else
+                        {
+                            Log($"[WARN] Job {job.JobCode} status unknown: {err}");
+                            await _client.UpdateAttemptStatusAsync(job.AttemptId, "SUBMISSION_UNKNOWN", err);
+                        }
                     }
                     catch (Exception ex)
                     {

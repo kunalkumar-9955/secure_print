@@ -141,8 +141,8 @@ export class PrintersService {
     // 4. Submit to agent via jobsService
     await this.jobsService.submitToAgent(testJob.id, printer.id, actorId, actorRole);
 
-    // 5. Poll up to 6 seconds for Desktop Agent to acknowledge and accept the job
-    const maxWaitMs = 6000;
+    // 5. Poll up to 15 seconds for Desktop Agent to acknowledge and spool the job
+    const maxWaitMs = 15000;
     const startWait = Date.now();
     let attemptAccepted = false;
     let finalAttempt: any = null;

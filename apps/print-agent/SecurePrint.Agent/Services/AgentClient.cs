@@ -34,9 +34,10 @@ namespace SecurePrint.Agent.Services
             {
                 BaseAddress = new Uri(config.ApiBaseUrl)
             };
-            if (!string.IsNullOrEmpty(config.PairingToken))
+            var token = config.GetDecryptedToken();
+            if (!string.IsNullOrEmpty(token))
             {
-                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", config.PairingToken);
+                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
         }
 
@@ -44,7 +45,8 @@ namespace SecurePrint.Agent.Services
         {
             _config.PairingToken = token;
             _config.Save();
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var decToken = _config.GetDecryptedToken() ?? token;
+            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", decToken);
         }
 
         public async Task<(bool Success, string? Error, string? ShopId, string? ShopName)> PairAsync(string pairingCode)
@@ -133,7 +135,7 @@ namespace SecurePrint.Agent.Services
         public async Task<List<PendingJobDto>> GetPendingJobsAsync()
         {
             var jobs = new List<PendingJobDto>();
-            if (string.IsNullOrEmpty(_config.PairingToken)) return jobs;
+            if (string.IsNullOrEmpty(_config.GetDecryptedToken())) return jobs;
 
             try
             {

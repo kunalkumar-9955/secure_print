@@ -365,7 +365,7 @@ export default function AdminAgentsPage() {
                 className="inline-flex items-center justify-center space-x-2 w-full py-2.5 bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 rounded-xl font-bold text-xs shadow-sm transition-all"
               >
                 <Download className="w-4 h-4 text-emerald-600" />
-                <span>Download SecurePrint-Windows-Agent.zip (~250 KB)</span>
+                <span>Download SecurePrint-Windows-Agent.zip (Includes Real Print Engine)</span>
               </a>
             </div>
 
@@ -373,10 +373,10 @@ export default function AdminAgentsPage() {
             <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
               <div className="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
                 <span className="w-5 h-5 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[10px]">2</span>
-                <span>Run Start-Agent.bat (or SecurePrint.Agent.exe)</span>
+                <span>Run Install-Connector.bat (Auto-Starts with Windows)</span>
               </div>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Extract the downloaded zip on your counter computer and double-click <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-800 font-semibold">Start-Agent.bat</code>. It will automatically connect to SecurePrint Cloud and detect your local printers.
+                Extract the downloaded zip on your Windows computer and run <code className="bg-white px-1.5 py-0.5 rounded border border-slate-200 font-mono text-slate-800 font-semibold">Install-Connector.bat</code>. It registers automatic startup on Windows boot and connects to your physical printers.
               </p>
             </div>
 

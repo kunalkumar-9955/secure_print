@@ -191,12 +191,29 @@ export class AgentsService {
     if (!agent) throw new UnauthorizedException('Invalid agent token.');
 
     let synced = 0;
+    const discoveredNames = new Set<string>();
+
     for (const p of printers) {
       // Guard: skip printers with missing or empty windowsPrinterName
       const printerName: string | undefined = p.windowsPrinterName || p.WindowsPrinterName;
       if (!printerName || printerName.trim() === '') {
         continue;
       }
+
+      discoveredNames.add(printerName);
+
+      // Check existing record to preserve user-selected default
+      const existing = await this.prisma.printer.findUnique({
+        where: {
+          shopId_windowsPrinterName: {
+            shopId: agent.shopId,
+            windowsPrinterName: printerName,
+          },
+        },
+      });
+
+      const isDefault = existing?.isDefault ?? (p.isDefault ?? p.IsDefault ?? false);
+
       await this.prisma.printer.upsert({
         where: {
           shopId_windowsPrinterName: {
@@ -209,7 +226,7 @@ export class AgentsService {
           driverName: p.driverName || p.DriverName || null,
           status: (p.status || p.Status || PrinterStatus.READY) as PrinterStatus,
           capabilitiesJson: p.capabilities || p.Capabilities || {},
-          isDefault: p.isDefault ?? p.IsDefault ?? false,
+          isDefault,
           lastSeenAt: new Date(),
         },
         create: {
@@ -219,10 +236,35 @@ export class AgentsService {
           driverName: p.driverName || p.DriverName || null,
           status: (p.status || p.Status || PrinterStatus.READY) as PrinterStatus,
           capabilitiesJson: p.capabilities || p.Capabilities || {},
-          isDefault: p.isDefault ?? p.IsDefault ?? false,
+          isDefault,
         },
       });
       synced++;
+    }
+
+    // Auto default printer reconciliation:
+    // If no printer is marked default, automatically assign the first ready physical printer
+    const allShopPrinters = await this.prisma.printer.findMany({
+      where: { shopId: agent.shopId },
+    });
+
+    const hasDefault = allShopPrinters.some((pr) => pr.isDefault);
+    if (!hasDefault && allShopPrinters.length > 0) {
+      const candidate = allShopPrinters.find((pr) => pr.status === PrinterStatus.READY) || allShopPrinters[0];
+      await this.prisma.printer.update({
+        where: { id: candidate.id },
+        data: { isDefault: true },
+      });
+    }
+
+    // Mark missing printers as OFFLINE
+    for (const pr of allShopPrinters) {
+      if (pr.agentId === agent.id && !discoveredNames.has(pr.windowsPrinterName)) {
+        await this.prisma.printer.update({
+          where: { id: pr.id },
+          data: { status: PrinterStatus.OFFLINE },
+        });
+      }
     }
 
     return { count: synced };
@@ -304,6 +346,12 @@ export class AgentsService {
         jobId: attempt.jobId,
         status: JobStatus.PRINT_FAILED,
         errorMessage,
+      });
+    } else if (status === PrintAttemptStatus.SUBMISSION_UNKNOWN) {
+      this.realtime.emitJobUpdate(attempt.jobId, attempt.job.shopId, {
+        jobId: attempt.jobId,
+        status: JobStatus.PRINTING,
+        errorMessage: errorMessage || 'Spooler status unknown. Verifying print queue...',
       });
     }
 
