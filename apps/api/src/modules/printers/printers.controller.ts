@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, UseGuards } from '@nestjs/common';
 import { PrintersService } from './printers.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { ShopAccessGuard } from '../../common/guards/shop-access.guard';
@@ -16,6 +16,26 @@ export class PrintersController {
     return {
       success: true,
       data: printers,
+    };
+  }
+
+  @Patch(':printerId/default')
+  @UseGuards(JwtAuthGuard, SubscriptionActiveGuard)
+  async setDefault(@Param('printerId') printerId: string, @CurrentUser() user: any) {
+    const result = await this.printersService.setDefaultPrinter(printerId, user.shopId);
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  @Delete(':printerId')
+  @UseGuards(JwtAuthGuard, SubscriptionActiveGuard)
+  async deletePrinter(@Param('printerId') printerId: string, @CurrentUser() user: any) {
+    const result = await this.printersService.deletePrinter(printerId, user.shopId);
+    return {
+      success: true,
+      data: result,
     };
   }
 

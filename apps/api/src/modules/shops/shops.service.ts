@@ -236,33 +236,32 @@ export class ShopsService {
 
     if (!shop) throw new NotFoundException('Shop not found.');
 
-    // Dynamic resolution order:
-    // 1. Explicitly requested publicBaseUrl (e.g. from frontend detecting LAN IP or configured base)
-    // 2. PUBLIC_BASE_URL or NEXT_PUBLIC_APP_URL or APP_URL env vars
-    // 3. Fallback to localhost in development
-    const rawBaseUrl =
-      publicBaseUrl ||
+    const isProd = process.env.NODE_ENV === 'production';
+
+    // Canonical source of truth:
+    // 1. PUBLIC_BASE_URL env var
+    // 2. NEXT_PUBLIC_APP_URL or APP_URL env vars
+    // 3. In production: default strictly to https://secure-print-web.vercel.app
+    // 4. In development: optional publicBaseUrl or http://localhost:3000
+    let effectiveBaseUrl =
       process.env.PUBLIC_BASE_URL ||
       process.env.NEXT_PUBLIC_APP_URL ||
       process.env.APP_URL ||
-      'http://localhost:3000';
+      (isProd ? 'https://secure-print-web.vercel.app' : (publicBaseUrl || 'http://localhost:3000'));
 
-    const cleanBaseUrl = rawBaseUrl.trim().replace(/\/+$/, '');
+    effectiveBaseUrl = effectiveBaseUrl.trim().replace(/\/+$/, '');
 
-    // Strict Production Check: never encode loopback/localhost in production
-    const isProd = process.env.NODE_ENV === 'production';
-    const isLoopback =
-      cleanBaseUrl.includes('localhost') ||
-      cleanBaseUrl.includes('127.0.0.1') ||
-      cleanBaseUrl.includes('0.0.0.0');
+    // In production, strictly reject localhost and private IP addresses
+    if (isProd) {
+      const isLoopbackOrPrivate =
+        effectiveBaseUrl.includes('localhost') ||
+        effectiveBaseUrl.includes('127.0.0.1') ||
+        effectiveBaseUrl.includes('0.0.0.0') ||
+        /^https?:\/\/(192\.168|10\.|172\.(1[6-9]|2[0-9]|3[0-1]))\./.test(effectiveBaseUrl);
 
-    let effectiveBaseUrl = cleanBaseUrl;
-    if (isProd && isLoopback) {
-      effectiveBaseUrl = (
-        process.env.PUBLIC_BASE_URL ||
-        process.env.NEXT_PUBLIC_APP_URL ||
-        'https://secure-print-web.vercel.app'
-      ).trim().replace(/\/+$/, '');
+      if (isLoopbackOrPrivate) {
+        effectiveBaseUrl = 'https://secure-print-web.vercel.app';
+      }
     }
 
     // The permanent QR MUST encode the customer storefront entry URL

@@ -34,6 +34,7 @@ export class PaymentsController {
   }
 
   @Post('request-cash')
+  @UseGuards(PrintCompletedGuard)
   async requestCash(@Body('jobId') jobId: string) {
     const result = await this.paymentsService.requestCashPayment(jobId);
     return {

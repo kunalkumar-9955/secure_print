@@ -96,6 +96,16 @@ export class JobsService {
       metadata: { jobCode, amount: pricingSnapshot.finalAmount },
     });
 
+    // Automatic physical printing dispatch: if shop has agent online with a ready printer, dispatch automatically
+    const autoPrintEnabled = session.shop.shopSettings?.autoPrintEnabled ?? true;
+    if (autoPrintEnabled) {
+      try {
+        await this.submitToAgent(printJob.id);
+      } catch {
+        // If agent is offline or printer is not ready, job remains safely in REQUEST_SENT in shop queue
+      }
+    }
+
     return {
       ...printJob,
       customerName: session.customerName,
@@ -365,11 +375,25 @@ export class JobsService {
   }
 
   async markPrintingCompleted(jobId: string, actorId?: string, actorRole?: string) {
-    // 1. Transition PRINTING -> PRINTING_COMPLETED
-    await this.transitionStatus(jobId, JobStatus.PRINTING_COMPLETED, actorId, actorRole);
-    // 2. Transition PRINTING_COMPLETED -> AWAITING_PAYMENT
-    const updated = await this.transitionStatus(jobId, JobStatus.AWAITING_PAYMENT, actorId, actorRole);
-    return updated;
+    const job = await this.prisma.printJob.findUnique({ where: { id: jobId } });
+    if (!job) throw new NotFoundException('Print job not found.');
+
+    if (job.status === JobStatus.REQUEST_SENT) {
+      await this.transitionStatus(jobId, JobStatus.SHOP_RECEIVED, actorId, actorRole);
+    }
+    const current = await this.prisma.printJob.findUnique({ where: { id: jobId } });
+    if (current?.status === JobStatus.SHOP_RECEIVED) {
+      await this.transitionStatus(jobId, JobStatus.PRINTING, actorId, actorRole);
+    }
+    const beforeComplete = await this.prisma.printJob.findUnique({ where: { id: jobId } });
+    if (beforeComplete?.status === JobStatus.PRINTING) {
+      await this.transitionStatus(jobId, JobStatus.PRINTING_COMPLETED, actorId, actorRole);
+    }
+    const beforeAwaiting = await this.prisma.printJob.findUnique({ where: { id: jobId } });
+    if (beforeAwaiting?.status === JobStatus.PRINTING_COMPLETED) {
+      await this.transitionStatus(jobId, JobStatus.AWAITING_PAYMENT, actorId, actorRole);
+    }
+    return this.prisma.printJob.findUnique({ where: { id: jobId } });
   }
 
   async getFileForJob(jobId: string, fileId: string) {

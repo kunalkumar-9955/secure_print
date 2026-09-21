@@ -8,7 +8,7 @@ namespace SecurePrint.Agent.Models
     {
         public Guid InstallationId { get; set; } = Guid.NewGuid();
         public string MachineName { get; set; } = Environment.MachineName;
-        public string ApiBaseUrl { get; set; } = "http://localhost:4000";
+        public string ApiBaseUrl { get; set; } = "https://secure-print-api.onrender.com";
         public string? PairingToken { get; set; }
         public string? ShopId { get; set; }
         public string? ShopName { get; set; }

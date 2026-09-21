@@ -92,7 +92,8 @@ export default function JobSuccessPage() {
     );
   }
 
-  const isDeleted = job.status === 'FILES_DELETED' || countdown === 0;
+  const isDeleted = job.status === 'FILES_DELETED';
+  const isCleanupFailed = job.status === 'CLEANUP_FAILED';
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 sm:p-6">
@@ -120,30 +121,37 @@ export default function JobSuccessPage() {
               <span className="flex items-center space-x-1.5">
                 {isDeleted ? (
                   <>
-                    <Trash2 className="w-4 h-4 text-slate-500" />
+                    <Trash2 className="w-4 h-4 text-emerald-600" />
                     <span className="text-slate-900">Files Permanently Deleted</span>
+                  </>
+                ) : isCleanupFailed ? (
+                  <>
+                    <ShieldCheck className="w-4 h-4 text-amber-600" />
+                    <span className="text-amber-900">Destruction Sweep Enqueued</span>
                   </>
                 ) : (
                   <>
                     <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    <span>Preparing Secure File Deletion</span>
+                    <span>Secure File Destruction in Progress</span>
                   </>
                 )}
               </span>
-              {!isDeleted && <span className="font-mono text-emerald-700">{countdown}s</span>}
+              {!isDeleted && countdown > 0 && (
+                <span className="font-mono text-emerald-700 font-bold">{countdown}s</span>
+              )}
             </div>
 
             <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
               <div
                 className="bg-emerald-600 h-full transition-all duration-1000 ease-linear"
-                style={{ width: `${Math.max(0, (1 - countdown / 10) * 100)}%` }}
+                style={{ width: `${isDeleted ? 100 : Math.max(0, (1 - countdown / 10) * 100)}%` }}
               />
             </div>
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
               {isDeleted
                 ? 'Original documents have been securely and permanently purged from server memory and storage.'
-                : '10-second server countdown in progress. All uploaded files are scheduled for automatic destruction.'}
+                : 'Server countdown active: uploaded files are scheduled for automatic zero-retention deletion.'}
             </p>
           </div>
 

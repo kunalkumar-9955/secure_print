@@ -22,3 +22,13 @@ services:
         value: 7d
       - key: TZ
         value: Asia/Kolkata
+      - key: PUBLIC_BASE_URL
+        value: https://secure-print-web.vercel.app
+      - key: CASHFREE_ENV
+        value: SANDBOX
+      - key: CASHFREE_APP_ID
+        sync: false
+      - key: CASHFREE_SECRET_KEY
+        sync: false
+      - key: CASHFREE_WEBHOOK_SECRET
+        sync: false

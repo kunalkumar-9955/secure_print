@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException, BadRequestException } from '@nestjs/common';
 import { PaymentProvider, CreateOrderParams, CreateOrderResult, ProviderPaymentStatus } from './payment-provider.interface';
 import { PaymentStatus } from '@secureprint/shared-types';
 import * as crypto from 'crypto';
@@ -39,11 +39,12 @@ export class CashfreeProvider implements PaymentProvider {
       },
     };
 
-    // If using dummy test credentials in local dev/testing without active gateway connectivity
-    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY') {
+    // If using unconfigured test credentials
+    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY' || !this.appId || !this.secretKey) {
       if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          'CRITICAL CONFIGURATION ERROR: Production environment cannot use dummy Cashfree credentials (TEST_APP_ID / TEST_SECRET_KEY). Real Cashfree credentials must be configured.',
+        this.logger.warn('Online payment requested but Cashfree credentials (CASHFREE_APP_ID / CASHFREE_SECRET_KEY) are not configured in production.');
+        throw new ServiceUnavailableException(
+          'Online payment gateway is temporarily unconfigured on this shop. Please pay cash at the counter or contact the operator.',
         );
       }
       this.logger.log(`[CashfreeProvider Sandbox Simulation] Created order: ${params.orderId} for ₹${params.amount}`);
@@ -68,7 +69,7 @@ export class CashfreeProvider implements PaymentProvider {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || `Cashfree order creation failed with status ${response.status}`);
+        throw new BadRequestException(data.message || `Cashfree order creation failed with status ${response.status}`);
       }
 
       return {
@@ -79,21 +80,24 @@ export class CashfreeProvider implements PaymentProvider {
       };
     } catch (err: any) {
       this.logger.error(`Cashfree createOrder failed: ${err.message}`);
-      throw err;
+      if (err instanceof BadRequestException || err instanceof ServiceUnavailableException) {
+        throw err;
+      }
+      throw new BadRequestException('Unable to start payment. Please try again.');
     }
   }
 
   async getOrderStatus(providerOrderId: string): Promise<ProviderPaymentStatus> {
-    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY') {
+    if (this.appId === 'TEST_APP_ID' || this.secretKey === 'TEST_SECRET_KEY' || !this.appId || !this.secretKey) {
       if (process.env.NODE_ENV === 'production') {
-        throw new Error(
-          'CRITICAL CONFIGURATION ERROR: Production environment cannot use dummy Cashfree credentials (TEST_APP_ID / TEST_SECRET_KEY). Real Cashfree credentials must be configured.',
+        throw new ServiceUnavailableException(
+          'Online payment gateway is temporarily unconfigured. Please pay cash at the counter.',
         );
       }
       return {
         providerOrderId,
         providerPaymentId: `pay_${providerOrderId}_mock`,
-        status: PaymentStatus.SUCCESS,
+        status: PaymentStatus.PENDING,
         amount: 0,
         currency: 'INR',
         rawPayload: { simulated: true },
@@ -112,7 +116,7 @@ export class CashfreeProvider implements PaymentProvider {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || `Failed to fetch Cashfree order status: ${response.status}`);
+        throw new BadRequestException(data.message || `Failed to fetch Cashfree order status: ${response.status}`);
       }
 
       const normalized = this.normalizeStatus(data.order_status);
@@ -127,7 +131,10 @@ export class CashfreeProvider implements PaymentProvider {
       };
     } catch (err: any) {
       this.logger.error(`Cashfree getOrderStatus failed: ${err.message}`);
-      throw err;
+      if (err instanceof BadRequestException || err instanceof ServiceUnavailableException) {
+        throw err;
+      }
+      throw new BadRequestException('Payment verification failed. Please try again.');
     }
   }
 

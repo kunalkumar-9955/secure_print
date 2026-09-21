@@ -16,22 +16,15 @@ import {
   LogIn,
   Store,
   RefreshCw,
+  Globe,
 } from 'lucide-react';
 import Link from 'next/link';
 
 export default function AdminQrPage() {
   const router = useRouter();
   const [copied, setCopied] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const [selectedShopId, setSelectedShopId] = useState<string>('');
-  const [urlMode, setUrlMode] = useState<'network' | 'custom' | 'localhost'>('network');
-  const [customHost, setCustomHost] = useState('');
-  const [clientOrigin, setClientOrigin] = useState('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setClientOrigin(window.location.origin);
-    }
-  }, []);
 
   // 1. Authenticated user profile
   const {
@@ -62,28 +55,7 @@ export default function AdminQrPage() {
   // Determine effective shopId to query
   const effectiveShopId = isSuperAdmin ? selectedShopId : auth?.shopId;
 
-  // Resolve effectiveBaseUrl
-  const envAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  const defaultPublicBase =
-    typeof window !== 'undefined' && window.location.origin
-      ? window.location.origin
-      : 'https://secure-print-web.vercel.app';
-  const resolvedNetworkBase = envAppUrl || clientOrigin || defaultPublicBase;
-
-  let effectiveBaseUrl = resolvedNetworkBase;
-  if (urlMode === 'localhost') {
-    effectiveBaseUrl =
-      typeof window !== 'undefined' && window.location.hostname !== 'localhost'
-        ? defaultPublicBase
-        : 'http://localhost:3000';
-  } else if (urlMode === 'custom' && customHost.trim()) {
-    const trimmed = customHost.trim();
-    effectiveBaseUrl = trimmed.startsWith('http://') || trimmed.startsWith('https://')
-      ? trimmed
-      : `http://${trimmed}`;
-  }
-
-  // 3. Fetch QR details for effective shop with dynamic baseUrl
+  // 3. Fetch canonical QR details from backend source of truth
   const {
     data: qr,
     isLoading: qrLoading,
@@ -91,12 +63,9 @@ export default function AdminQrPage() {
     error: qrErrorObj,
     refetch,
   } = useQuery({
-    queryKey: ['shop-qr', effectiveShopId, effectiveBaseUrl],
-    queryFn: () =>
-      apiRequest(
-        `/api/v1/shops/${effectiveShopId}/qr?baseUrl=${encodeURIComponent(effectiveBaseUrl)}`,
-      ),
-    enabled: !!effectiveShopId && !!effectiveBaseUrl,
+    queryKey: ['shop-qr', effectiveShopId],
+    queryFn: () => apiRequest(`/api/v1/shops/${effectiveShopId}/qr`),
+    enabled: !!effectiveShopId,
     retry: 1,
   });
 
@@ -105,6 +74,21 @@ export default function AdminQrPage() {
       navigator.clipboard.writeText(qr.publicUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const handleDownloadQr = () => {
+    if (!qr?.qrDataUrl) return;
+    setDownloading(true);
+    try {
+      const link = document.createElement('a');
+      link.href = qr.qrDataUrl;
+      link.download = `SecurePrint_QR_${qr.shopSlug || 'counter'}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setTimeout(() => setDownloading(false), 1000);
     }
   };
 
@@ -201,11 +185,11 @@ export default function AdminQrPage() {
         <div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Permanent Shop QR</h1>
           <p className="text-sm text-slate-600 mt-1">
-            Print this sheet and mount it on your shop counter for walk-in customers
+            Mount this permanent sheet on your counter for contactless walk-in customer printing
           </p>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 flex-wrap gap-y-2">
           {isSuperAdmin && shops.length > 1 && (
             <select
               value={selectedShopId}
@@ -225,8 +209,18 @@ export default function AdminQrPage() {
             className="inline-flex items-center space-x-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? 'Copied URL' : 'Copy URL'}</span>
+            <span>{copied ? 'Copied' : 'Copy URL'}</span>
           </button>
+
+          <button
+            onClick={handleDownloadQr}
+            disabled={downloading}
+            className="inline-flex items-center space-x-1.5 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-semibold transition-colors"
+          >
+            <Download className="w-4 h-4 text-slate-600" />
+            <span>{downloading ? 'Downloading...' : 'Download QR'}</span>
+          </button>
+
           <button
             onClick={handlePrint}
             className="inline-flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all"
@@ -237,76 +231,23 @@ export default function AdminQrPage() {
         </div>
       </div>
 
-      {/* Network / QR Target Configuration Controls */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3 no-print">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center space-x-2 flex-wrap">
-            <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Target URL:</span>
-            <span className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-              {effectiveBaseUrl}/s/{qr.shopSlug}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-2">
-            <button
-              type="button"
-              onClick={() => setUrlMode('network')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                urlMode === 'network'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Network / Wi-Fi
-            </button>
-            <button
-              type="button"
-              onClick={() => setUrlMode('custom')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                urlMode === 'custom'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Custom Host / IP
-            </button>
-            <button
-              type="button"
-              onClick={() => setUrlMode('localhost')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                urlMode === 'localhost'
-                  ? 'bg-slate-800 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              Localhost (Laptop Only)
-            </button>
-          </div>
+      {/* Target URL Info Banner (No dev mode tabs) */}
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 no-print">
+        <div className="flex items-center space-x-2.5 flex-wrap">
+          <Globe className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+          <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">Target URL:</span>
+          <a
+            href={qr.publicUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 hover:underline"
+          >
+            {qr.publicUrl}
+          </a>
         </div>
 
-        {urlMode === 'custom' && (
-          <div className="pt-2 border-t border-slate-100 flex items-center space-x-2">
-            <label className="text-xs font-medium text-slate-600">Enter Host / IP:</label>
-            <input
-              type="text"
-              value={customHost}
-              onChange={(e) => setCustomHost(e.target.value)}
-              placeholder="e.g. 192.168.1.100:3000 or yourdomain.com"
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono w-72 text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            />
-          </div>
-        )}
-
-        <div className="text-[11px] text-slate-500 flex items-center space-x-1.5 pt-1">
-          {effectiveBaseUrl.includes('localhost') || effectiveBaseUrl.includes('127.0.0.1') ? (
-            <span className="text-amber-700 font-medium">
-              ⚠️ Currently using localhost. Phones scanning this QR will get connection refused unless using LAN Wi-Fi IP or production domain.
-            </span>
-          ) : (
-            <span className="text-emerald-700 font-medium">
-              ✓ Mobile Ready: Walk-in customers scanning this QR on the same Wi-Fi or public domain will open the storefront directly.
-            </span>
-          )}
+        <div className="text-[11px] text-emerald-700 font-semibold flex items-center space-x-1">
+          <span>✓ Canonical Production HTTPS Link</span>
         </div>
       </div>
 

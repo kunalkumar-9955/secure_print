@@ -4,7 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api-client';
-import { CreditCard, Banknote, ShieldCheck, AlertCircle, Loader2, CheckCircle2, ArrowLeft } from 'lucide-react';
+import { formatCustomerFileName } from '@/lib/format-filename';
+import { CreditCard, Banknote, ShieldCheck, AlertCircle, Loader2, RefreshCw, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 
 export default function JobPaymentPage() {
@@ -75,17 +76,13 @@ export default function JobPaymentPage() {
         body: JSON.stringify({ jobId }),
       });
 
-      // Redirect to return url or verification flow
-      if (order.paymentUrl && order.paymentUrl.includes('mock_session=1')) {
-        // Direct simulation return for sandboxed environments
-        await handleServerVerify(order.orderId);
-      } else if (order.paymentUrl) {
+      if (order?.paymentUrl) {
         window.location.href = order.paymentUrl;
       } else {
-        await handleServerVerify(order.orderId);
+        setError('Payment gateway did not provide a checkout session. Please try again or pay cash at the counter.');
       }
     } catch (err: any) {
-      setError(err.message || 'Could not initiate online payment.');
+      setError(err.message || 'Unable to start payment. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -153,7 +150,7 @@ export default function JobPaymentPage() {
           <AlertCircle className="w-12 h-12 text-amber-500 mx-auto" />
           <h2 className="text-xl font-bold text-slate-900">Printing in Progress</h2>
           <p className="text-sm text-slate-600">
-            Payment cannot be processed before your document is printed. Please wait for the counter operator to complete printing.
+            Payment cannot be processed before your document is physically printed. Please wait for the counter operator to complete printing.
           </p>
           <button
             onClick={() => router.push(`/job/${jobId}/status`)}
@@ -167,6 +164,7 @@ export default function JobPaymentPage() {
   }
 
   const finalAmount = Number(job.pricingSnapshotJson?.finalAmount || 2).toFixed(2);
+  const friendlyDocName = formatCustomerFileName(job.files?.[0]?.originalName, job.files?.[0]?.mimeType);
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-center items-center p-4 sm:p-6">
@@ -178,9 +176,29 @@ export default function JobPaymentPage() {
 
         <div className="bg-white p-6 sm:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
           {error && (
-            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm flex items-start space-x-3">
-              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
-              <div>{error}</div>
+            <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-700 text-sm space-y-2">
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500" />
+                <div className="font-medium text-xs sm:text-sm">{error}</div>
+              </div>
+              <div className="flex items-center space-x-2 pt-1 pl-7">
+                <button
+                  type="button"
+                  onClick={handlePayOnline}
+                  disabled={loading}
+                  className="inline-flex items-center space-x-1 px-3 py-1 rounded-lg bg-red-700 hover:bg-red-800 text-white text-xs font-semibold"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Retry</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setError(null)}
+                  className="text-xs text-red-600 hover:underline font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
 
@@ -195,8 +213,8 @@ export default function JobPaymentPage() {
           <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
             <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Payable Amount</div>
             <div className="text-4xl font-extrabold text-slate-900 tracking-tight">₹{finalAmount}</div>
-            <div className="text-xs text-emerald-700 font-semibold pt-1">
-              Order #{job.jobCode} • {job.files?.[0]?.originalName}
+            <div className="text-xs text-emerald-700 font-semibold pt-1 truncate max-w-xs mx-auto">
+              Order #{job.jobCode} • {friendlyDocName}
             </div>
           </div>
 
@@ -264,4 +282,3 @@ export default function JobPaymentPage() {
     </div>
   );
 }
-

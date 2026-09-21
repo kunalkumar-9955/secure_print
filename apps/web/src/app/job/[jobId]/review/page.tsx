@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/api-client';
 import { ShieldCheck, Send, Loader2, ArrowLeft, AlertCircle, RefreshCw, FileText } from 'lucide-react';
+import { formatCustomerFileName } from '@/lib/format-filename';
 
 export default function JobReviewPage() {
   const params = useParams();
@@ -121,7 +122,7 @@ export default function JobReviewPage() {
               <span className="text-slate-600">Document:</span>
               <span className="font-medium text-slate-800 truncate max-w-[200px] inline-flex items-center space-x-1">
                 <FileText className="w-3.5 h-3.5 text-slate-500 flex-shrink-0" />
-                <span className="truncate">{file?.originalName || 'Document'}</span>
+                <span className="truncate">{formatCustomerFileName(file?.originalName, file?.mimeType)}</span>
               </span>
             </div>
             <div className="flex justify-between">

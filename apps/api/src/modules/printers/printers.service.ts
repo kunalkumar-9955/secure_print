@@ -224,4 +224,41 @@ export class PrintersService {
     ];
     return Buffer.from(lines.join('\n'), 'utf-8');
   }
+
+  async setDefaultPrinter(printerId: string, shopId: string) {
+    const target = await this.prisma.printer.findFirst({
+      where: { id: printerId, shopId },
+    });
+    if (!target) throw new NotFoundException('Printer not found for this shop.');
+
+    await this.prisma.$transaction([
+      this.prisma.printer.updateMany({
+        where: { shopId },
+        data: { isDefault: false },
+      }),
+      this.prisma.printer.update({
+        where: { id: printerId },
+        data: { isDefault: true },
+      }),
+    ]);
+
+    return { success: true, printerId, isDefault: true };
+  }
+
+  async deletePrinter(printerId: string, shopId: string) {
+    const target = await this.prisma.printer.findFirst({
+      where: { id: printerId, shopId },
+    });
+    if (!target) throw new NotFoundException('Printer not found for this shop.');
+
+    await this.prisma.printAttempt.deleteMany({
+      where: { printerId },
+    });
+
+    await this.prisma.printer.delete({
+      where: { id: printerId },
+    });
+
+    return { success: true, deletedPrinterId: printerId };
+  }
 }
