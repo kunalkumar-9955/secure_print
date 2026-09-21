@@ -256,14 +256,17 @@ export class ShopsService {
       cleanBaseUrl.includes('127.0.0.1') ||
       cleanBaseUrl.includes('0.0.0.0');
 
+    let effectiveBaseUrl = cleanBaseUrl;
     if (isProd && isLoopback) {
-      throw new BadRequestException(
-        'Production counter QR generation requires a real public HTTPS URL (e.g. https://yourdomain.com), not a localhost/loopback address.',
-      );
+      effectiveBaseUrl = (
+        process.env.PUBLIC_BASE_URL ||
+        process.env.NEXT_PUBLIC_APP_URL ||
+        'https://secure-print-web.vercel.app'
+      ).trim().replace(/\/+$/, '');
     }
 
     // The permanent QR MUST encode the customer storefront entry URL
-    const publicUrl = `${cleanBaseUrl}/s/${shop.slug}`;
+    const publicUrl = `${effectiveBaseUrl}/s/${shop.slug}`;
     const qrDataUrl = await QRCode.toDataURL(publicUrl, {
       errorCorrectionLevel: 'H',
       margin: 2,

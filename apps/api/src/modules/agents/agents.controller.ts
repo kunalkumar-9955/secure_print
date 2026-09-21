@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
   Body,
   Param,
   Headers,
@@ -151,5 +152,15 @@ export class AgentsController {
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', 'attachment; filename="SecurePrint-Windows-Agent.zip"');
     return res.sendFile(finalPath);
+  }
+
+  @Delete('agents/:agentId')
+  @UseGuards(JwtAuthGuard, ShopAccessGuard, SubscriptionActiveGuard)
+  async deleteAgent(@Param('agentId') agentId: string, @CurrentUser() user: any) {
+    const result = await this.agentsService.deleteAgent(agentId, user?.shopId, user?.role);
+    return {
+      success: true,
+      data: result,
+    };
   }
 }

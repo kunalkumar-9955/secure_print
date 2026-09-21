@@ -21,6 +21,7 @@ import {
   ArrowRight,
   ShieldCheck,
   HelpCircle,
+  Trash2,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -113,6 +114,16 @@ export default function AdminAgentsPage() {
     navigator.clipboard.writeText(pairingCode);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDeleteAgent = async (agentId: string, machineName: string) => {
+    if (!confirm(`Are you sure you want to disconnect and remove computer "${machineName}"?`)) return;
+    try {
+      await apiRequest(`/api/v1/agents/${agentId}`, { method: 'DELETE' });
+      refetch();
+    } catch (err: any) {
+      alert(`Could not remove agent: ${err.message}`);
+    }
   };
 
   const formatTime = (seconds: number) => {
@@ -251,16 +262,25 @@ export default function AdminAgentsPage() {
                     </div>
                   </div>
 
-                  <span
-                    className={`inline-flex items-center space-x-1.5 text-[10px] font-bold px-3 py-1 rounded-full border shadow-sm ${
-                      isOnline
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                        : 'bg-red-50 border-red-200 text-red-700'
-                    }`}
-                  >
-                    <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-600' : 'bg-red-600'}`} />
-                    <span>{agent.status}</span>
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span
+                      className={`inline-flex items-center space-x-1.5 text-[10px] font-bold px-3 py-1 rounded-full border shadow-sm ${
+                        isOnline
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                          : 'bg-red-50 border-red-200 text-red-700'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-600' : 'bg-red-600'}`} />
+                      <span>{agent.status}</span>
+                    </span>
+                    <button
+                      onClick={() => handleDeleteAgent(agent.id, agent.machineName)}
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs font-semibold inline-flex items-center space-x-1"
+                      title="Disconnect & Remove Agent"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-4 text-xs pt-3 border-t border-slate-100">

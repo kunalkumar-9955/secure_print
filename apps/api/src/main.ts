@@ -41,6 +41,8 @@ async function bootstrap() {
     rawBody: true, // Required for Cashfree HMAC webhook verification
   });
 
+  (app.getHttpAdapter().getInstance() as any).set('trust proxy', 1);
+
   app.use(cookieParser());
 
   const isProduction = process.env.NODE_ENV === 'production';

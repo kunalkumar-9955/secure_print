@@ -353,4 +353,25 @@ export class AgentsService {
 
     return { status: 'EXPIRED' };
   }
+
+  async deleteAgent(agentId: string, shopId?: string, userRole?: string) {
+    const agent = await this.prisma.desktopAgent.findUnique({
+      where: { id: agentId },
+    });
+
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    if (userRole !== 'SUPER_ADMIN' && shopId && agent.shopId !== shopId) {
+      throw new UnauthorizedException('You do not have permission to delete this agent.');
+    }
+
+    await this.prisma.printAttempt.deleteMany({ where: { agentId } });
+    await this.prisma.printer.deleteMany({ where: { agentId } });
+    await this.prisma.desktopAgent.delete({ where: { id: agentId } });
+
+    return { success: true, deletedAgentId: agentId };
+  }
 }
+

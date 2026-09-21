@@ -146,4 +146,28 @@ export class HealthController {
       shopCount,
     };
   }
+
+  @Get('cleanup-offline-agents')
+  async cleanupOfflineAgents() {
+    const threshold = new Date(Date.now() - 60000); // 1 minute
+    const allAgents = await this.prisma.desktopAgent.findMany();
+    const toDelete = allAgents.filter(
+      (a) => !a.lastHeartbeatAt || new Date(a.lastHeartbeatAt) < threshold,
+    );
+
+    const deletedNames: string[] = [];
+    for (const a of toDelete) {
+      await this.prisma.printAttempt.deleteMany({ where: { agentId: a.id } });
+      await this.prisma.printer.deleteMany({ where: { agentId: a.id } });
+      await this.prisma.desktopAgent.delete({ where: { id: a.id } });
+      deletedNames.push(a.machineName);
+    }
+
+    return {
+      success: true,
+      deletedCount: deletedNames.length,
+      deletedAgents: deletedNames,
+    };
+  }
 }
+

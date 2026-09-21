@@ -170,23 +170,33 @@ export default function AdminPrintersPage() {
                     Host: <strong className="text-slate-700">{p.agent?.machineName || 'Windows Agent'}</strong>
                   </span>
 
-                  <button
-                    onClick={() => handleTestPrint(p.id)}
-                    disabled={isWorking}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm"
-                  >
-                    {isWorking ? (
-                      <>
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Spooling...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-3.5 h-3.5" />
-                        <span>Test Print</span>
-                      </>
-                    )}
-                  </button>
+                  {p.agent?.status === 'ONLINE' ? (
+                    <button
+                      onClick={() => handleTestPrint(p.id)}
+                      disabled={isWorking}
+                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm text-xs transition-colors"
+                    >
+                      {isWorking ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Spooling...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-3.5 h-3.5" />
+                          <span>Test Print</span>
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <span
+                      title="The host computer for this printer queue is currently offline."
+                      className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-slate-100 border border-slate-200 text-slate-400 text-[11px] font-medium cursor-not-allowed"
+                    >
+                      <AlertCircle className="w-3 h-3 text-slate-400" />
+                      <span>Host PC Offline</span>
+                    </span>
+                  )}
                 </div>
               </div>
             );

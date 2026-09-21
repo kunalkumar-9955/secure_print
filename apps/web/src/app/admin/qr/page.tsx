@@ -64,11 +64,18 @@ export default function AdminQrPage() {
 
   // Resolve effectiveBaseUrl
   const envAppUrl = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  const resolvedNetworkBase = envAppUrl || clientOrigin || 'http://localhost:3000';
+  const defaultPublicBase =
+    typeof window !== 'undefined' && window.location.origin
+      ? window.location.origin
+      : 'https://secure-print-web.vercel.app';
+  const resolvedNetworkBase = envAppUrl || clientOrigin || defaultPublicBase;
 
   let effectiveBaseUrl = resolvedNetworkBase;
   if (urlMode === 'localhost') {
-    effectiveBaseUrl = 'http://localhost:3000';
+    effectiveBaseUrl =
+      typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+        ? defaultPublicBase
+        : 'http://localhost:3000';
   } else if (urlMode === 'custom' && customHost.trim()) {
     const trimmed = customHost.trim();
     effectiveBaseUrl = trimmed.startsWith('http://') || trimmed.startsWith('https://')
