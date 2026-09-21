@@ -3,17 +3,43 @@ import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import * as cookieParser from 'cookie-parser';
 import { Logger } from '@nestjs/common';
+import { execSync } from 'child_process';
+import * as path from 'path';
+import * as fs from 'fs';
 
 (BigInt.prototype as any).toJSON = function () {
   return this.toString();
 };
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
+
+  // Ensure production database schema and tables exist before AppModule initializes
+  if (process.env.DATABASE_URL) {
+    const candidatePaths = [
+      path.resolve(__dirname, '../prisma/schema.prisma'),
+      path.resolve(process.cwd(), 'apps/api/prisma/schema.prisma'),
+      path.resolve(process.cwd(), 'prisma/schema.prisma'),
+    ];
+    const schemaPath = candidatePaths.find((p) => fs.existsSync(p));
+
+    if (schemaPath) {
+      try {
+        logger.log(`Synchronizing database schema via: ${schemaPath}`);
+        execSync(`npx prisma db push --schema="${schemaPath}" --skip-generate --accept-data-loss`, {
+          stdio: 'inherit',
+          env: process.env,
+        });
+        logger.log(`Database tables verified and synchronized successfully.`);
+      } catch (err: any) {
+        logger.warn(`Automatic schema push warning: ${err.message}`);
+      }
+    }
+  }
+
   const app = await NestFactory.create(AppModule, {
     rawBody: true, // Required for Cashfree HMAC webhook verification
   });
-
-  const logger = new Logger('Bootstrap');
 
   app.use(cookieParser());
 
