@@ -120,7 +120,7 @@ export class CashfreeProvider implements PaymentProvider {
       return {
         providerOrderId: params.orderId,
         paymentSessionId: `session_${params.orderId}_mock`,
-        paymentUrl: `${params.orderMeta?.returnUrl || 'http://localhost:3000'}&mock_session=1`,
+        paymentUrl: `${params.orderMeta?.returnUrl || process.env.PUBLIC_BASE_URL || 'https://secure-print-web.vercel.app'}&mock_session=1`,
       };
     }
 

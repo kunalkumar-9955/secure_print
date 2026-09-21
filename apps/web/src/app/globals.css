@@ -8,6 +8,11 @@
     --foreground: 222 47% 11%;
   }
 
+  html, body {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   body {
     @apply bg-slate-50 text-slate-900 antialiased selection:bg-emerald-600 selection:text-white min-h-screen;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";

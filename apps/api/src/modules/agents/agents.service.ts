@@ -276,6 +276,74 @@ export class AgentsService {
     });
     if (!agent) throw new UnauthorizedException('Invalid agent token.');
 
+    // Auto-dispatch check: If shop has autoPrintEnabled (default true), dispatch waiting jobs
+    if (this.prisma.shop?.findUnique && this.prisma.printJob?.findMany) {
+      const shop = await this.prisma.shop.findUnique({
+        where: { id: agent.shopId },
+        include: { shopSettings: true },
+      });
+
+    const isAutoPrint = shop?.shopSettings?.autoPrintEnabled ?? true;
+    if (isAutoPrint) {
+      const defaultPrinter =
+        (await this.prisma.printer.findFirst({
+          where: { shopId: agent.shopId, agentId: agent.id, isDefault: true, status: PrinterStatus.READY },
+        })) ||
+        (await this.prisma.printer.findFirst({
+          where: { shopId: agent.shopId, agentId: agent.id, status: PrinterStatus.READY },
+        })) ||
+        (await this.prisma.printer.findFirst({
+          where: { shopId: agent.shopId, status: PrinterStatus.READY },
+        }));
+
+      if (defaultPrinter) {
+        const unassignedJobs = await this.prisma.printJob.findMany({
+          where: {
+            shopId: agent.shopId,
+            status: { in: [JobStatus.REQUEST_SENT, JobStatus.SHOP_RECEIVED] },
+            printAttempts: {
+              none: {
+                status: {
+                  in: [
+                    PrintAttemptStatus.SUBMITTED,
+                    PrintAttemptStatus.PRINTING,
+                    PrintAttemptStatus.COMPLETED,
+                  ],
+                },
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+          take: 5,
+        });
+
+        for (const job of unassignedJobs) {
+          await this.prisma.printJob.update({
+            where: { id: job.id },
+            data: { status: JobStatus.PRINTING },
+          });
+
+          await this.prisma.printAttempt.create({
+            data: {
+              jobId: job.id,
+              agentId: agent.id,
+              printerId: defaultPrinter.id,
+              status: PrintAttemptStatus.SUBMITTED,
+              startedAt: new Date(),
+            },
+          });
+
+          this.realtime.emitJobUpdate(job.id, job.shopId, {
+            jobId: job.id,
+            status: JobStatus.PRINTING,
+            printerId: defaultPrinter.id,
+            agentId: agent.id,
+          });
+        }
+      }
+    }
+  }
+
     const attempts = await this.prisma.printAttempt.findMany({
       where: {
         job: { shopId: agent.shopId, status: JobStatus.PRINTING },

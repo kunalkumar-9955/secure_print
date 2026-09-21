@@ -211,7 +211,23 @@ namespace SecurePrint.Agent.Services
 
                 bool submitted = false;
 
-                if (File.Exists(sumatraPath))
+                // Check if this job is ALREADY queued in the Windows spooler (prevents duplicate printing upon restart/reconnect)
+                try
+                {
+                    var existingJobs = queue.GetPrintJobInfoCollection();
+                    var alreadyQueued = existingJobs.FirstOrDefault(j =>
+                        j.Name.Contains(jobCode, StringComparison.OrdinalIgnoreCase) ||
+                        j.Name.Contains(Path.GetFileNameWithoutExtension(filePath), StringComparison.OrdinalIgnoreCase));
+
+                    if (alreadyQueued != null)
+                    {
+                        logger?.Invoke($"[RECOVERY] Job {jobCode} is already present in Windows spooler (Job ID: {alreadyQueued.JobIdentifier}). Skipping duplicate submission.");
+                        submitted = true;
+                    }
+                }
+                catch { }
+
+                if (!submitted && File.Exists(sumatraPath))
                 {
                     logger?.Invoke($"[ENGINE] Using native Windows GDI print engine (SumatraPDF) for '{printerName}'...");
 
@@ -253,7 +269,7 @@ namespace SecurePrint.Agent.Services
                         submitted = true;
                     }
                 }
-                else
+                else if (!submitted)
                 {
                     logger?.Invoke($"[ENGINE] Standalone print engine not found. Using Windows Shell print for '{printerName}'...");
                     submitted = FallbackShellPrint(printerName, filePath);
