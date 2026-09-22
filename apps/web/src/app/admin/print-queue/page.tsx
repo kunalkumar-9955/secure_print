@@ -15,6 +15,7 @@ import {
   LogIn,
 } from 'lucide-react';
 import Link from 'next/link';
+import { formatCustomerFileName } from '@/lib/format-filename';
 
 export default function AdminPrintQueuePage() {
   const [filter, setFilter] = useState<string>('ALL');
@@ -265,7 +266,9 @@ export default function AdminPrintQueuePage() {
                   </div>
 
                   <div className="text-xs text-slate-600 flex flex-wrap items-center gap-3">
-                    <span>Doc: <strong className="text-slate-900">{file?.originalName}</strong></span>
+                    <span>
+                      Doc: <strong className="text-slate-900">{formatCustomerFileName(file?.originalName, file?.mimeType)}</strong>
+                    </span>
                     <span>•</span>
                     <span>Mode: <strong className="text-slate-900">{options.colorMode === 'COLOR' ? 'Color' : 'B&W'}</strong></span>
                     <span>•</span>
@@ -300,12 +303,29 @@ export default function AdminPrintQueuePage() {
                   {/* Print Action */}
                   {(job.status === 'REQUEST_SENT' || job.status === 'SHOP_RECEIVED') && (
                     <button
-                      onClick={() => handlePrint(job.id)}
+                      onClick={() => {
+                        if (!isAgentOnline) {
+                          setPrintError(
+                            'Desktop Agent is offline on your counter PC. Please launch SecurePrint Agent on Windows, or click "Connect Desktop Agent" above.',
+                          );
+                          return;
+                        }
+                        handlePrint(job.id);
+                      }}
                       disabled={isWorking}
-                      className="inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md shadow-blue-600/20"
+                      className={`inline-flex items-center space-x-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                        !isAgentOnline
+                          ? 'bg-amber-100 border border-amber-300 text-amber-900 hover:bg-amber-200 shadow-sm'
+                          : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20'
+                      }`}
+                      title={!isAgentOnline ? 'Desktop Agent is offline. Click to view instructions.' : 'Dispatch job to Windows physical printer'}
                     >
-                      {isWorking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-                      <span>Print via Agent</span>
+                      {isWorking ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Printer className="w-3.5 h-3.5" />
+                      )}
+                      <span>{isAgentOnline ? 'Print via Agent' : 'Agent Offline'}</span>
                     </button>
                   )}
 
