@@ -3,7 +3,7 @@ import type { NextConfig } from 'next';
 const apiDestination = (
   process.env.INTERNAL_API_URL ||
   process.env.NEXT_PUBLIC_API_URL ||
-  'http://127.0.0.1:4000'
+  (process.env.NODE_ENV === 'production' ? 'https://secureprint-api.onrender.com' : 'http://127.0.0.1:4000')
 ).replace(/\/+$/, '');
 
 const nextConfig: NextConfig = {

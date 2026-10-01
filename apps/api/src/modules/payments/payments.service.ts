@@ -110,7 +110,7 @@ export class PaymentsService {
 
     // Request order from Cashfree provider using resolved credentials
     const returnUrl = `${process.env.PUBLIC_BASE_URL || 'https://secure-print-web.vercel.app'}/job/${job.id}/payment?order_id=${orderId}`;
-    const notifyUrl = `${process.env.API_BASE_URL || 'https://secure-print-api.onrender.com'}/api/v1/webhooks/cashfree`;
+    const notifyUrl = `${process.env.API_BASE_URL || 'https://secureprint-api.onrender.com'}/api/v1/webhooks/cashfree`;
 
     const orderResult = await this.cashfree.createOrder(
       {
@@ -190,8 +190,9 @@ export class PaymentsService {
     const expectedAmount = Number(pricing.finalAmount);
 
     // Amount match check
-    if (providerStatus.amount > 0 && Math.abs(providerStatus.amount - expectedAmount) > 0.01) {
-      this.logger.error(`Amount mismatch: expected ${expectedAmount}, got ${providerStatus.amount}`);
+    const receivedAmount = Number(providerStatus.amount);
+    if (!isNaN(receivedAmount) && receivedAmount > 0 && Math.abs(receivedAmount - expectedAmount) > 0.01) {
+      this.logger.error(`Amount mismatch: expected ${expectedAmount}, got ${receivedAmount}`);
       throw new BadRequestException('Security verification failed: payment amount mismatch.');
     }
 

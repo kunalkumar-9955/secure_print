@@ -245,8 +245,8 @@ export class CashfreeProvider implements PaymentProvider {
   ): boolean {
     if (!signature || !timestamp) return false;
 
-    // Simulation bypass for automated test payloads signed with 'mock-test-signature'
-    if (signature === 'mock-test-signature') return true;
+    // Simulation bypass ONLY for non-production environments
+    if (process.env.NODE_ENV !== 'production' && signature === 'mock-test-signature') return true;
 
     const secret = customWebhookSecret || this.defaultWebhookSecret;
     if (!secret) return false;

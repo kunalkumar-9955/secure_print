@@ -79,8 +79,9 @@ async function bootstrap() {
         return callback(new Error(`CORS blocked for origin: ${origin} in development`));
       }
 
-      // Production mode: strictly match configured production origins
-      if (configuredOrigins.includes(cleanOrigin)) {
+      // Production mode: match configured production origins, or *.vercel.app frontend domains
+      const isVercel = /^https:\/\/[a-zA-Z0-9_\-\.]+\.vercel\.app$/.test(cleanOrigin);
+      if (configuredOrigins.includes(cleanOrigin) || isVercel) {
         return callback(null, true);
       }
 

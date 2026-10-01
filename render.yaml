@@ -5,7 +5,7 @@ services:
     plan: starter
     rootDir: .
     buildCommand: npm ci && npm --workspace=apps/api run prisma:generate && npm --workspace=packages/shared-types run build && npm --workspace=packages/config run build && npm --workspace=packages/validation run build && npm --workspace=apps/api run build
-    startCommand: npm --workspace=apps/api run start:prod
+    startCommand: node apps/api/dist/main.js
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
@@ -24,8 +24,10 @@ services:
         value: Asia/Kolkata
       - key: PUBLIC_BASE_URL
         value: https://secure-print-web.vercel.app
+      - key: API_BASE_URL
+        value: https://secureprint-api.onrender.com
       - key: CASHFREE_ENV
-        value: SANDBOX
+        value: PRODUCTION
       - key: CASHFREE_APP_ID
         sync: false
       - key: CASHFREE_SECRET_KEY

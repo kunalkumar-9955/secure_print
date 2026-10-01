@@ -12,7 +12,7 @@ namespace SecurePrint.Agent.Models
     {
         public Guid InstallationId { get; set; } = Guid.NewGuid();
         public string MachineName { get; set; } = Environment.MachineName;
-        public string ApiBaseUrl { get; set; } = "https://secure-print-api.onrender.com";
+        public string ApiBaseUrl { get; set; } = "https://secureprint-api.onrender.com";
         public string? PairingToken { get; set; }
         public string? ShopId { get; set; }
         public string? ShopName { get; set; }
@@ -39,6 +39,11 @@ namespace SecurePrint.Agent.Models
                         if (config.InstallationId == Guid.Empty)
                         {
                             config.InstallationId = Guid.NewGuid();
+                            config.Save();
+                        }
+                        if (config.ApiBaseUrl == "https://secure-print-api.onrender.com")
+                        {
+                            config.ApiBaseUrl = "https://secureprint-api.onrender.com";
                             config.Save();
                         }
                         return config;

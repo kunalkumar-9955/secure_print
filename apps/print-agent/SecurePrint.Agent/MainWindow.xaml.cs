@@ -27,7 +27,7 @@ namespace SecurePrint.Agent
             _spoolerService = new SpoolerService();
             _client = new AgentClient(_config);
 
-            TxtMachineInfo.Text = $"Host: {_config.MachineName} | Installation ID: {_config.InstallationId}";
+            TxtMachineInfo.Text = $"Host: {_config.MachineName} | Cloud: {_config.ApiBaseUrl}";
 
             var token = _config.GetDecryptedToken();
             if (!string.IsNullOrEmpty(token) && !string.IsNullOrEmpty(_config.ShopId))
